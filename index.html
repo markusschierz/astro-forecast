@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="description" content="Astrofotografie-Wettervorhersage mit Wolken, Seeing, Transparenz, Tau-Risiko und Astro-Scores." />
+  <title>Astro Forecast</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <div class="eyebrow">ASTRO FORECAST</div>
+      <h1 id="locationTitle">Winterthur</h1>
+      <div id="locationMeta" class="subtle">Schweiz</div>
+    </div>
+    <div class="header-actions">
+      <button id="refreshBtn" class="secondary" type="button">Aktualisieren</button>
+      <button id="settingsBtn" class="secondary" type="button">Info</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="search-panel card">
+      <form id="searchForm" autocomplete="off">
+        <label for="locationInput">Standort</label>
+        <div class="search-row">
+          <input id="locationInput" name="location" type="search" value="Winterthur" placeholder="Ort oder PLZ" />
+          <button type="submit">Suchen</button>
+        </div>
+      </form>
+      <div id="searchResults" class="search-results" hidden></div>
+      <div class="toolbar">
+        <div class="segmented" role="group" aria-label="Zeitraum">
+          <button type="button" class="range-btn active" data-hours="72">3 Tage</button>
+          <button type="button" class="range-btn" data-hours="120">5 Tage</button>
+          <button type="button" class="range-btn" data-hours="192">8 Tage</button>
+        </div>
+        <div id="updatedAt" class="subtle"></div>
+      </div>
+    </section>
+
+    <section id="status" class="status card">Daten werden geladen…</section>
+
+    <section id="summary" class="summary-grid" hidden>
+      <article class="metric-card">
+        <div class="metric-label">Beste Deep-Sky-Phase</div>
+        <div class="metric-value" id="bestDeep">—</div>
+        <div class="metric-note" id="bestDeepNote">—</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Beste Planetary-Phase</div>
+        <div class="metric-value" id="bestPlanet">—</div>
+        <div class="metric-note" id="bestPlanetNote">—</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Niedrigstes Seeing</div>
+        <div class="metric-value" id="bestSeeing">—</div>
+        <div class="metric-note" id="bestSeeingNote">—</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label">Niedrigste Bewölkung</div>
+        <div class="metric-value" id="bestCloud">—</div>
+        <div class="metric-note" id="bestCloudNote">—</div>
+      </article>
+    </section>
+
+    <section id="forecastCard" class="forecast-card card" hidden>
+      <div class="forecast-head">
+        <div>
+          <h2>Stündliche Astro-Bedingungen</h2>
+          <p>Raster 3 Stunden. 7Timer-Seeing wird als Originalklasse angezeigt; ein unabhängiger Atmosphärenindikator prüft die Plausibilität und deckt den längeren Prognosehorizont ab.</p>
+        </div>
+        <div class="legend">
+          <span><i class="legend-box excellent"></i>sehr gut</span>
+          <span><i class="legend-box good"></i>gut</span>
+          <span><i class="legend-box fair"></i>mittel</span>
+          <span><i class="legend-box poor"></i>schlecht</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="forecastTable" class="forecast-table" aria-label="Astro Forecast"></table>
+      </div>
+    </section>
+
+    <section class="details-grid" id="details" hidden>
+      <article class="card explainer">
+        <h3>Score-Logik</h3>
+        <p><strong>Deep Sky</strong> gewichtet Wolken und Transparenz am stärksten, danach Tau-Risiko, Wind, Niederschlag und Mondlicht.</p>
+        <p><strong>Planetary</strong> gewichtet Seeing am stärksten, danach Wolken und Wind. Mondlicht hat praktisch keinen Einfluss.</p>
+      </article>
+      <article class="card explainer">
+        <h3>Datenquellen</h3>
+        <p>MeteoSwiss ICON-CH via Open-Meteo für lokale Wetterdaten. Open-Meteo Druckniveau-Daten für Höhenwind. 7Timer ASTRO für Seeing und Transparenz.</p>
+        <p>Die Seeing-Prognose ist eine Modellvorhersage und keine Messung am Standort.</p>
+      </article>
+    </section>
+  </main>
+
+  <dialog id="infoDialog">
+    <form method="dialog">
+      <div class="dialog-head">
+        <h2>Über Astro Forecast</h2>
+        <button class="secondary" value="close">Schließen</button>
+      </div>
+      <p>Diese MVP-Webapp kombiniert hochaufgelöste Wetterdaten mit astronomisch relevanten Größen. Sie ist für Planung, nicht für sicherheitskritische Entscheidungen gedacht.</p>
+      <p><strong>Seeing:</strong> 7Timer ASTRO wird serverseitig geladen und unverändert als Seeing-Klasse ausgegeben. Aus einer Klasse wie 0.75–1.00″ wird keine künstliche Einzelzahl gemacht.</p><p><strong>Modellindikator:</strong> Zusätzlich wird die Turbulenzneigung aus vertikaler Temperaturschichtung, Windscherung, Jetstream, Vertikalbewegung, CAPE und Bodenwind bewertet. Dieser Wert ist bewusst keine Arcsec-Zahl.</p>
+      <p><strong>Transparenz:</strong> 7Timer-Klasse 1–8; niedriger ist besser. 7Timer ASTRO hat ungefähr 3 Tage Prognosehorizont.</p>
+      <p><strong>Dunkelheit:</strong> aus Sonnenhöhe; astronomische Dunkelheit beginnt unter −18°.</p>
+      <p class="subtle">Daten: Open-Meteo / MeteoSwiss ICON-CH, Open-Meteo Druckniveau-Daten, 7Timer ASTRO. Astronomie: SunCalc.</p>
+    </form>
+  </dialog>
+
+  <footer>
+    <span>Astro Forecast 2</span>
+    <span>Open-Meteo · MeteoSwiss · 7Timer</span>
+  </footer>
+</body>
+</html>
