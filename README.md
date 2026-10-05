@@ -1,70 +1,120 @@
-# Astro Forecast 2
+# Astro Forecast 3
 
-Astrofotografie-Wettervorhersage für die Einbindung auf `test.astro-foto.ch` oder den lokalen Testbetrieb.
+Astrofotografie-Wettervorhersage für `test.astro-foto.ch` mit MeteoSwiss/Open-Meteo, meteoblue und 7Timer.
 
-## Datenquellen
+## Neu in Version 3
 
-- **MeteoSwiss ICON-CH via Open-Meteo**: Temperatur, Feuchte, Taupunkt, Niederschlag, Wolken tief/mittel/hoch, Wind, Böen, Wolkenbasis, CAPE.
-- **Open-Meteo Druckniveau-Daten**: Temperatur, Windgeschwindigkeit/-richtung, Geopotentialhöhe, Vertikalbewegung und Feuchte auf 850/700/500/300/250/200 hPa.
-- **7Timer ASTRO**: explizites astronomisches Seeing und Transparenz für ungefähr 3 Tage.
-- **SunCalc**: Sonne, Mond und astronomische Dunkelheit.
+- meteoblue serverseitig integriert; der API-Key steht nie in `app.js` oder im Browser.
+- Free-Weather-Pakete `clouds-3h` und `air-3h` als zweite unabhängige Forecast-Quelle.
+- Das offizielle meteoblue-Paket `seeing-1h` wird automatisch getestet.
+- Falls `seeing-1h` für den Key freigeschaltet ist, wird `seeing_arcsec` als primäre Seeing-Prognose verwendet.
+- meteoblue Seeing Index 1/2, Jetstream und Bad-Layer-Daten werden zusätzlich angezeigt.
+- 7Timer bleibt als unabhängige Seeing-/Transparenzquelle.
+- Wolken-Konsens aus MeteoSwiss ICON-CH und meteoblue mLM.
 
-## Seeing-Logik
+## API-Key auf dem Webserver
 
-Astro Forecast erfindet aus der 7Timer-Klasse keine künstlich genaue Einzelzahl. Die Originalklassen werden als Bereiche angezeigt:
+### Empfohlen: Server-Umgebungsvariable
 
-1. `<0.50″`
-2. `0.50–0.75″`
-3. `0.75–1.00″`
-4. `1.00–1.25″`
-5. `1.25–1.50″`
-6. `1.50–2.00″`
-7. `2.00–2.50″`
-8. `>2.50″`
+Wenn dein Hoster Umgebungsvariablen für PHP/FPM unterstützt, setze:
 
-Zusätzlich wird ein unabhängiger **Seeing-Modellindikator 0–100** berechnet. Er berücksichtigt:
+```text
+METEOBLUE_API_KEY=dein_echter_key
+```
 
-- potentielle Temperaturschichtung,
-- Gradient-Richardson-Zahl,
-- Windscherung zwischen Druckflächen,
-- Jetstream auf 250/300 hPa,
-- vertikale Luftbewegung,
-- CAPE,
-- Bodenwind.
+Dann ist keine Schlüsseldatei nötig.
 
-Dieser Modellindikator ist absichtlich **keine Arcsec-Prognose**. Ohne ein optisches Turbulenzprofil (Cn²) wäre eine solche Zahl Scheingenauigkeit. Für 7Timer-Zeiten wird zusätzlich eine Konfidenz aus der Übereinstimmung beider Ansätze angezeigt.
+### Einfach auf Shared Hosting: `config.local.php`
+
+Im Ordner:
+
+```text
+astro-forecast/api/
+```
+
+liegt `config.example.php`. Kopiere sie zu:
+
+```text
+astro-forecast/api/config.local.php
+```
+
+Inhalt:
+
+```php
+<?php
+return [
+    'meteoblue_api_key' => 'DEIN_ECHTER_KEY',
+];
+```
+
+Die enthaltene `.htaccess` sperrt `config.local.php` und `config.example.php` für direkte HTTP-Zugriffe. `config.local.php` wird absichtlich nicht im ZIP mit einem echten Schlüssel ausgeliefert.
+
+Wenn Shell-Zugriff vorhanden ist:
+
+```bash
+chmod 600 astro-forecast/api/config.local.php
+```
+
+Den Key niemals in `app.js`, `index.html`, WordPress Custom HTML oder ein öffentliches Git-Repository schreiben.
+
+## API-Test auf test.astro-foto.ch
+
+Nach dem Upload:
+
+```text
+https://test.astro-foto.ch/astro-forecast/api/meteoblue.php?lat=47.4988&lon=8.7241&asl=439
+```
+
+Erwartete Struktur:
+
+```json
+{
+  "error": false,
+  "source": "meteoblue",
+  "free": { "ok": true, "status": 200, "data": {} },
+  "seeing": { "ok": true, "status": 200, "data": {} }
+}
+```
+
+Bei einem normalen Free-Key kann `free.ok` wahr sein und `seeing.ok` falsch/403. Das ist korrekt: `seeing-1h` gehört nicht zum normalen Free-Paket. Wenn dein Key zusätzlichen Seeing-Zugriff hat, wird `seeing.ok` wahr und die App verwendet `seeing_arcsec` automatisch.
 
 ## Lokal starten
 
-Nicht mehr `python3 -m http.server` verwenden, weil dieser Server den 7Timer-Proxy nicht bereitstellt.
-
 ```bash
 cd astro-forecast
+export METEOBLUE_API_KEY='DEIN_ECHTER_KEY'
 python3 dev_server.py 8765
 ```
 
-Dann öffnen:
+Dann:
 
 ```text
 http://127.0.0.1:8765/
 ```
 
-Der Entwicklungsserver bedient `/api/7timer.php` selbst und ruft 7Timer serverseitig auf.
+Der lokale Entwicklungsserver stellt sowohl `/api/7timer.php` als auch `/api/meteoblue.php` bereit.
 
-## Auf test.astro-foto.ch installieren
+## Datenquellen
 
-Den kompletten Ordner `astro-forecast` in den Document Root der Subdomain kopieren, sodass folgendes existiert:
+- **MeteoSwiss ICON-CH via Open-Meteo**: lokale Wetterdaten, Wolken tief/mittel/hoch, Wind, Feuchte, Taupunkt, Niederschlag.
+- **Open-Meteo Druckniveau-Daten**: 850/700/500/300/250/200 hPa für Höhenwind und Turbulenzdiagnostik.
+- **meteoblue mLM**: `clouds-3h` und `air-3h` als unabhängige Vergleichsquelle.
+- **meteoblue seeing-1h**: `seeing_arcsec`, Seeing Index 1/2, Jetstream, Bad Layer, sofern für den Key freigeschaltet.
+- **7Timer ASTRO**: Seeing-Klasse und Transparenz.
+- **SunCalc**: Sonne, Mond, Dunkelheit.
 
-```text
-https://test.astro-foto.ch/astro-forecast/
-https://test.astro-foto.ch/astro-forecast/api/7timer.php?lat=47.499&lon=8.724
-```
+## Seeing-Priorität
 
-Der Webserver benötigt PHP mit entweder cURL oder aktivem `allow_url_fopen`. `api/7timer.php` validiert die Koordinaten und cached erfolgreiche Antworten 15 Minuten im System-Temp-Verzeichnis.
+1. meteoblue `seeing_arcsec`, wenn verfügbar.
+2. 7Timer Seeing-Klasse als zweite direkte Forecast-Quelle.
+3. Eigener Atmosphären-/Turbulenzindikator nur als diagnostischer Fallback, niemals als erfundene Arcsec-Zahl.
+
+## Caching
+
+- meteoblue: 30 Minuten serverseitig, um Credits bei Reloads zu sparen.
+- 7Timer: 15 Minuten serverseitig.
 
 ## WordPress-Einbindung
-
-In einen Block **Individuelles HTML**:
 
 ```html
 <div class="astro-forecast-frame">
@@ -72,24 +122,16 @@ In einen Block **Individuelles HTML**:
 </div>
 ```
 
-CSS:
-
 ```css
 .astro-forecast-frame { width: 100%; max-width: 100%; margin: 0 auto; }
 .astro-forecast-frame iframe {
   display: block;
   width: 100%;
-  height: 1200px;
+  height: 1450px;
   border: 0;
   border-radius: 1.5rem;
 }
 @media (max-width: 768px) {
-  .astro-forecast-frame iframe { height: 1400px; border-radius: 1rem; }
+  .astro-forecast-frame iframe { height: 1700px; border-radius: 1rem; }
 }
 ```
-
-## Hinweise
-
-- 7Timer ASTRO selbst hat nur ungefähr 3 Tage Prognosehorizont. Die App zeigt danach weiterhin die vollständigen Wetter- und Atmosphärendaten, aber keine erfundene 7Timer-Arcsec-Zahl.
-- Der Atmosphärenindikator bleibt für den gesamten gewählten 3/5/8-Tage-Horizont sichtbar, soweit die Druckniveau-Daten verfügbar sind.
-- Die Vorhersage ist Modellrechnung, keine lokale Seeing-Messung.

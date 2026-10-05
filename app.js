@@ -11,6 +11,7 @@ const state = {
   weather: null,
   upperAir: null,
   astro: null,
+  meteoblue: null,
   rows: []
 };
 
@@ -128,6 +129,70 @@ function astroProxyUrl(loc) {
   return `api/7timer.php?${p}`;
 }
 
+function meteoblueProxyUrl(loc) {
+  const params = { lon: Number(loc.longitude).toFixed(5), lat: Number(loc.latitude).toFixed(5) };
+  if (finite(loc.elevation)) params.asl = Math.round(Number(loc.elevation));
+  return `api/meteoblue.php?${new URLSearchParams(params)}`;
+}
+
+function normalizedKey(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function pickSeries(section, candidates = [], matcher = null) {
+  if (!section || typeof section !== 'object') return null;
+  const entries = Object.entries(section).filter(([k,v]) => k !== 'time' && Array.isArray(v));
+  const candidateKeys = candidates.map(normalizedKey);
+  for (const [k,v] of entries) if (candidateKeys.includes(normalizedKey(k))) return v;
+  if (matcher) {
+    for (const [k,v] of entries) if (matcher(normalizedKey(k), k)) return v;
+  }
+  return null;
+}
+function seriesValue(series, i) {
+  const v = series?.[i];
+  return Number.isFinite(Number(v)) ? Number(v) : NaN;
+}
+function meteoblueIndex(section) {
+  const map = new Map();
+  if (!section?.time || !Array.isArray(section.time)) return map;
+  for (let i=0; i<section.time.length; i++) {
+    const d = new Date(section.time[i]);
+    if (!Number.isNaN(d.getTime())) map.set(isoHourUTC(d), i);
+  }
+  return map;
+}
+function nearestIndex(map, dateUtc, maxHours = 0) {
+  const direct = map.get(isoHourUTC(dateUtc));
+  if (direct !== undefined) return direct;
+  for (let h=1; h<=maxHours; h++) {
+    for (const sign of [-1, 1]) {
+      const idx = map.get(isoHourUTC(new Date(dateUtc.getTime() + sign*h*3600e3)));
+      if (idx !== undefined) return idx;
+    }
+  }
+  return undefined;
+}
+function conservativeCloud(a, b) {
+  const aa = Number(a), bb = Number(b);
+  if (Number.isFinite(aa) && Number.isFinite(bb)) return 0.65 * Math.max(aa, bb) + 0.35 * Math.min(aa, bb);
+  if (Number.isFinite(aa)) return aa;
+  if (Number.isFinite(bb)) return bb;
+  return NaN;
+}
+function seeingAgreement(mbSeeing, timerIndex, modelQuality) {
+  if (Number.isFinite(mbSeeing) && seeingInfo(timerIndex)) {
+    const delta = Math.abs(mbSeeing - seeingInfo(timerIndex).representative);
+    if (delta <= 0.30) return 'hoch';
+    if (delta <= 0.65) return 'mittel';
+    return 'niedrig';
+  }
+  if (Number.isFinite(mbSeeing) && Number.isFinite(modelQuality)) {
+    const delta = Math.abs(scaleQuality(mbSeeing, 0.55, 2.8) - modelQuality);
+    if (delta <= 14) return 'hoch';
+    if (delta <= 28) return 'mittel';
+    return 'niedrig';
+  }
+  return seeingConfidence(timerIndex, modelQuality);
+}
+
 async function fetchJson(url, timeoutMs = 15000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -153,22 +218,31 @@ async function refresh() {
   setStatus('Daten werden geladen…');
   renderLocation();
   try {
-    const [weatherResult, upperResult, astroResult] = await Promise.allSettled([
+    const [weatherResult, upperResult, astroResult, meteoblueResult] = await Promise.allSettled([
       fetchWeather(state.location),
       fetchJson(upperAirUrl(state.location)),
-      fetchJson(astroProxyUrl(state.location), 15000)
+      fetchJson(astroProxyUrl(state.location), 15000),
+      fetchJson(meteoblueProxyUrl(state.location), 18000)
     ]);
     if (weatherResult.status !== 'fulfilled') throw weatherResult.reason;
     state.weather = weatherResult.value;
     state.upperAir = upperResult.status === 'fulfilled' ? upperResult.value : null;
     state.astro = astroResult.status === 'fulfilled' ? astroResult.value : null;
+    state.meteoblue = meteoblueResult.status === 'fulfilled' ? meteoblueResult.value : null;
     state.rows = buildRows();
     renderAll();
 
     const notes = ['MeteoSwiss-Wetter geladen'];
     notes.push(state.upperAir ? 'Atmosphärenprofil geladen' : 'Atmosphärenprofil nicht verfügbar');
     notes.push(state.astro ? '7Timer ASTRO geladen' : '7Timer ASTRO nicht verfügbar');
-    if (!state.astro) notes.push('Seeing-Zahl wird nicht erfunden; Modellindikator bleibt separat');
+    const mbFree = state.meteoblue?.free;
+    const mbSeeing = state.meteoblue?.seeing;
+    if (mbFree?.ok) notes.push('meteoblue Clouds/Air geladen');
+    else if (state.meteoblue) notes.push(`meteoblue Free-Pakete nicht verfügbar${mbFree?.status ? ` (HTTP ${mbFree.status})` : ''}`);
+    else notes.push('meteoblue nicht konfiguriert/erreichbar');
+    if (mbSeeing?.ok) notes.push('meteoblue Seeing geladen');
+    else if (state.meteoblue) notes.push(mbSeeing?.status === 403 ? 'meteoblue Seeing nicht freigeschaltet' : 'meteoblue Seeing nicht verfügbar');
+    if (!mbSeeing?.ok && !state.astro) notes.push('Keine direkte Seeing-Quelle; nur separater Atmosphärenindikator');
     setStatus(notes.join(' · '), state.upperAir ? 'ok' : '');
     $('#updatedAt').textContent = `Aktualisiert ${formatLocal(new Date(), {hour:'2-digit', minute:'2-digit'})}`;
   } catch (err) {
@@ -283,6 +357,19 @@ function buildRows() {
   if (!wh?.time) return [];
   const upper = buildHourlyIndex(state.upperAir);
   const astro = buildAstroIndex();
+  const mbFreeData = state.meteoblue?.free?.ok ? state.meteoblue.free.data : null;
+  const mbSeeingData = state.meteoblue?.seeing?.ok ? state.meteoblue.seeing.data : null;
+  const mb3 = mbFreeData?.data_3h || null;
+  const mb1 = mbSeeingData?.data_1h || null;
+  const mb3Index = meteoblueIndex(mb3);
+  const mb1Index = meteoblueIndex(mb1);
+  const mbCloudTotalSeries = pickSeries(mb3, ['cloudcover','totalcloudcover','cloudcovertotal'], k => k.includes('cloud') && !k.includes('low') && !k.includes('mid') && !k.includes('medium') && !k.includes('high'));
+  const mbCloudLowSeries = pickSeries(mb3, ['lowclouds','cloudcoverlow','lowcloudcover'], k => k.includes('cloud') && k.includes('low'));
+  const mbCloudMidSeries = pickSeries(mb3, ['midclouds','mediumclouds','cloudcovermid','cloudcovermedium','midcloudcover'], k => k.includes('cloud') && (k.includes('mid') || k.includes('medium')));
+  const mbCloudHighSeries = pickSeries(mb3, ['highclouds','cloudcoverhigh','highcloudcover'], k => k.includes('cloud') && k.includes('high'));
+  const mbCapeSeries = pickSeries(mb3, ['cape'], k => k === 'cape' || k.includes('cape'));
+  const mbFogSeries = pickSeries(mb3, ['fog_probability','fogprobability'], k => k.includes('fog') && k.includes('prob'));
+  const mbVisibilitySeries = pickSeries(mb3, ['visibility'], k => k === 'visibility');
   const offset = state.weather.utc_offset_seconds || 0;
   const result = [];
 
@@ -303,36 +390,61 @@ function buildRows() {
     const seeingIndex = a && Number(a.seeing) !== -9999 ? Number(a.seeing) : null;
     const transIndex = a && Number(a.transparency) !== -9999 ? Number(a.transparency) : null;
 
+    const mb3i = nearestIndex(mb3Index, dateUtc, 2);
+    const mb1i = nearestIndex(mb1Index, dateUtc, 1);
+    const mbCloud = mb3i === undefined ? NaN : seriesValue(mbCloudTotalSeries, mb3i);
+    const mbLow = mb3i === undefined ? NaN : seriesValue(mbCloudLowSeries, mb3i);
+    const mbMid = mb3i === undefined ? NaN : seriesValue(mbCloudMidSeries, mb3i);
+    const mbHigh = mb3i === undefined ? NaN : seriesValue(mbCloudHighSeries, mb3i);
+    const mbCape = mb3i === undefined ? NaN : seriesValue(mbCapeSeries, mb3i);
+    const mbFog = mb3i === undefined ? NaN : seriesValue(mbFogSeries, mb3i);
+    const mbVisibility = mb3i === undefined ? NaN : seriesValue(mbVisibilitySeries, mb3i);
+    const mbSeeing = mb1i === undefined ? NaN : seriesValue(mb1?.seeing_arcsec, mb1i);
+    const mbSeeing1 = mb1i === undefined ? NaN : seriesValue(mb1?.seeing1, mb1i);
+    const mbSeeing2 = mb1i === undefined ? NaN : seriesValue(mb1?.seeing2, mb1i);
+    const mbJet = mb1i === undefined ? NaN : seriesValue(mb1?.jetstream, mb1i);
+    const mbBadBottom = mb1i === undefined ? NaN : seriesValue(mb1?.badlayer_bottom, mb1i);
+    const mbBadTop = mb1i === undefined ? NaN : seriesValue(mb1?.badlayer_top, mb1i);
+    const mbBadGradient = mb1i === undefined ? NaN : seriesValue(mb1?.badlayer_gradient, mb1i);
+
     const surface = {
       cape:Number(wh.cape?.[i]), wind_speed_10m:Number(wh.wind_speed_10m?.[i]), wind_gusts_10m:Number(wh.wind_gusts_10m?.[i])
     };
     const atm = atmosphereDiagnostics(u, surface);
-    const confidence = seeingConfidence(seeingIndex, atm.quality);
+    const confidence = seeingAgreement(mbSeeing, seeingIndex, atm.quality);
 
     const cloud = Number(wh.cloud_cover?.[i]), low=Number(wh.cloud_cover_low?.[i]), mid=Number(wh.cloud_cover_mid?.[i]), high=Number(wh.cloud_cover_high?.[i]);
+    const cloudConsensus = conservativeCloud(cloud, mbCloud);
+    const lowConsensus = conservativeCloud(low, mbLow);
+    const midConsensus = conservativeCloud(mid, mbMid);
+    const highConsensus = conservativeCloud(high, mbHigh);
     const temp=Number(wh.temperature_2m?.[i]), dew=Number(wh.dew_point_2m?.[i]), rh=Number(wh.relative_humidity_2m?.[i]);
     const wind=Number(wh.wind_speed_10m?.[i]), gust=Number(wh.wind_gusts_10m?.[i]);
     const precip=Number(wh.precipitation?.[i]), pop=Number(wh.precipitation_probability?.[i]);
 
-    const cloudQ = weighted([[percentQuality(cloud),.46],[percentQuality(low),.20],[percentQuality(mid),.16],[percentQuality(high),.18]]);
+    const cloudQ = weighted([[percentQuality(cloudConsensus),.46],[percentQuality(lowConsensus),.20],[percentQuality(midConsensus),.16],[percentQuality(highConsensus),.18]]);
     const transQ = transIndex ? transparencyQuality(transIndex) : weighted([
-      [percentQuality(high),.55],[scaleQuality(rh,55,98),.25],[scaleQuality(Number(u.relative_humidity_700hPa),35,95),.20]
+      [percentQuality(highConsensus),.45],[scaleQuality(rh,55,98),.20],[scaleQuality(Number(u.relative_humidity_700hPa),35,95),.20],
+      [Number.isFinite(mbVisibility) ? clamp((mbVisibility-5000)/(30000-5000)*100,0,100) : NaN,.15]
     ]);
     const dewQ = dewQuality(temp,dew,rh);
     const windQ = weighted([[scaleQuality(wind,3,28),.7],[scaleQuality(gust,8,45),.3]]);
     const precipQ = Math.min(scaleQuality(precip,0,1.5), scaleQuality(pop,5,80));
     const darkQ = darknessQuality(sm.sunAlt);
     const moonQ = 100 - moonPenalty(sm.moonAlt, sm.moonIllum);
-    const seeingQ = Number.isFinite(seeingQualityFromIndex(seeingIndex)) ? seeingQualityFromIndex(seeingIndex) : atm.quality;
+    const seeingQ = Number.isFinite(mbSeeing) ? scaleQuality(mbSeeing, 0.55, 2.8) : (Number.isFinite(seeingQualityFromIndex(seeingIndex)) ? seeingQualityFromIndex(seeingIndex) : atm.quality);
 
-    let deep = weighted([[cloudQ,.39],[transQ,.19],[dewQ,.10],[windQ,.08],[precipQ,.09],[moonQ,.07],[darkQ,.08]]);
+    const fogQ = Number.isFinite(mbFog) ? scaleQuality(mbFog, 5, 75) : NaN;
+    let deep = weighted([[cloudQ,.36],[transQ,.19],[dewQ,.10],[windQ,.08],[precipQ,.08],[moonQ,.07],[darkQ,.07],[fogQ,.05]]);
     let planetary = weighted([[seeingQ,.46],[cloudQ,.27],[windQ,.12],[precipQ,.08],[darkQ,.07]]);
     if (sm.sunAlt > -6) { deep *= darkQ/100; planetary *= Math.max(.25,darkQ/100); }
 
     result.push({
       localTime,dateUtc,sunAlt:sm.sunAlt,moonAlt:sm.moonAlt,moonIllum:sm.moonIllum,
-      cloud,low,mid,high,temp,dew,rh,wind,gust,precip,pop,cloudBase:Number(wh.cloud_base?.[i]),cape:Number(wh.cape?.[i]),
-      seeingIndex,transIndex,atmQuality:atm.quality,seeingConfidence:confidence,minRi:atm.minRi,badLayer:atm.badLayer,
+      cloud,low,mid,high,mbCloud,mbLow,mbMid,mbHigh,cloudConsensus,lowConsensus,midConsensus,highConsensus,mbCape,mbFog,mbVisibility,
+      temp,dew,rh,wind,gust,precip,pop,cloudBase:Number(wh.cloud_base?.[i]),cape:Number(wh.cape?.[i]),
+      seeingIndex,transIndex,mbSeeing,mbSeeing1,mbSeeing2,mbJet,mbBadBottom,mbBadTop,mbBadGradient,
+      atmQuality:atm.quality,seeingConfidence:confidence,minRi:atm.minRi,badLayer:atm.badLayer,
       jetMs:atm.jet,maxShear:atm.maxShear,maxVV:atm.maxVV,
       deep:Math.round(clamp(deep,0,100)),planetary:Math.round(clamp(planetary,0,100)),transQ:Math.round(transQ),dewQ:Math.round(dewQ)
     });
@@ -356,19 +468,21 @@ function renderSummary() {
   const rows=visibleRows(), night=r=>r.sunAlt<=-12;
   const bestDeep=bestBy(rows,r=>r.deep,night)||bestBy(rows,r=>r.deep);
   const bestPlanet=bestBy(rows,r=>r.planetary,night)||bestBy(rows,r=>r.planetary);
+  const mbSeeingRows=rows.filter(r=>Number.isFinite(r.mbSeeing)&&night(r)).sort((a,b)=>a.mbSeeing-b.mbSeeing);
   const seeingRows=rows.filter(r=>seeingInfo(r.seeingIndex)&&night(r)).sort((a,b)=>seeingInfo(a.seeingIndex).representative-seeingInfo(b.seeingIndex).representative);
   const modelRows=rows.filter(r=>Number.isFinite(r.atmQuality)&&night(r)).sort((a,b)=>b.atmQuality-a.atmQuality);
-  const bestSeeing=seeingRows[0]||modelRows[0];
-  const bestCloud=rows.filter(night).sort((a,b)=>a.cloud-b.cloud)[0];
+  const bestSeeing=mbSeeingRows[0]||seeingRows[0]||modelRows[0];
+  const bestCloud=rows.filter(night).sort((a,b)=>a.cloudConsensus-b.cloudConsensus)[0];
 
   $('#bestDeep').textContent=bestDeep?`${bestDeep.deep}/100`:'—'; $('#bestDeepNote').textContent=bestDeep?dateLabel(bestDeep):'—';
   $('#bestPlanet').textContent=bestPlanet?`${bestPlanet.planetary}/100`:'—'; $('#bestPlanetNote').textContent=bestPlanet?dateLabel(bestPlanet):'—';
   if (bestSeeing) {
     const si=seeingInfo(bestSeeing.seeingIndex);
-    $('#bestSeeing').textContent=si?si.label:`Modell ${bestSeeing.atmQuality}/100`;
-    $('#bestSeeingNote').textContent=`${dateLabel(bestSeeing)}${si&&bestSeeing.seeingConfidence!=='—'?` · Konfidenz ${bestSeeing.seeingConfidence}`:''}`;
+    $('#bestSeeing').textContent=Number.isFinite(bestSeeing.mbSeeing)?`${bestSeeing.mbSeeing.toFixed(2)}″`:si?si.label:`Modell ${bestSeeing.atmQuality}/100`;
+    const src=Number.isFinite(bestSeeing.mbSeeing)?'meteoblue':si?'7Timer':'Atmosphärenmodell';
+    $('#bestSeeingNote').textContent=`${dateLabel(bestSeeing)} · ${src}${bestSeeing.seeingConfidence!=='—'?` · Konsens ${bestSeeing.seeingConfidence}`:''}`;
   } else { $('#bestSeeing').textContent='—'; $('#bestSeeingNote').textContent='—'; }
-  $('#bestCloud').textContent=bestCloud?`${Math.round(bestCloud.cloud)} %`:'—'; $('#bestCloudNote').textContent=bestCloud?dateLabel(bestCloud):'—';
+  $('#bestCloud').textContent=bestCloud?`${Math.round(bestCloud.cloudConsensus)} %`:'—'; $('#bestCloudNote').textContent=bestCloud?dateLabel(bestCloud):'—';
 }
 
 function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
@@ -385,11 +499,22 @@ function renderTable() {
   const html=[]; html.push(`<thead><tr><th class="row-label">Zeit</th>${head.join('')}</tr></thead><tbody>`);
   html.push(row('Deep Sky',rows.map(r=>cellByQuality(r.deep,r.deep,'score'))));
   html.push(row('Planetary',rows.map(r=>cellByQuality(r.planetary,r.planetary,'score'))));
-  html.push(row('Wolken gesamt',rows.map(r=>cellByBadPercent(r.cloud))));
-  html.push(row('Wolken tief',rows.map(r=>cellByBadPercent(r.low))));
-  html.push(row('Wolken mittel',rows.map(r=>cellByBadPercent(r.mid))));
-  html.push(row('Wolken hoch',rows.map(r=>cellByBadPercent(r.high))));
+  html.push(row('Wolken-Konsens',rows.map(r=>cellByBadPercent(r.cloudConsensus)), 'Konservativer Konsens aus MeteoSwiss ICON-CH und meteoblue mLM; bei nur einer verfügbaren Quelle wird diese verwendet.'));
+  html.push(row('MeteoSwiss gesamt',rows.map(r=>cellByBadPercent(r.cloud))));
+  html.push(row('meteoblue gesamt',rows.map(r=>Number.isFinite(r.mbCloud)?cellByBadPercent(r.mbCloud):td('—'))));
+  html.push(row('MeteoSwiss tief',rows.map(r=>cellByBadPercent(r.low))));
+  html.push(row('meteoblue tief',rows.map(r=>Number.isFinite(r.mbLow)?cellByBadPercent(r.mbLow):td('—'))));
+  html.push(row('MeteoSwiss mittel',rows.map(r=>cellByBadPercent(r.mid))));
+  html.push(row('meteoblue mittel',rows.map(r=>Number.isFinite(r.mbMid)?cellByBadPercent(r.mbMid):td('—'))));
+  html.push(row('MeteoSwiss hoch',rows.map(r=>cellByBadPercent(r.high))));
+  html.push(row('meteoblue hoch',rows.map(r=>Number.isFinite(r.mbHigh)?cellByBadPercent(r.mbHigh):td('—'))));
+  html.push(row('Nebelrisiko MB',rows.map(r=>Number.isFinite(r.mbFog)?cellByQuality(fmt(r.mbFog,0,'%'),scaleQuality(r.mbFog,5,75)):td('—')), 'meteoblue fog_probability aus dem Clouds-Paket.'));
+  html.push(row('Sichtweite MB',rows.map(r=>Number.isFinite(r.mbVisibility)?cellByQuality(fmt(r.mbVisibility/1000,1,' km'),clamp((r.mbVisibility-5000)/(30000-5000)*100,0,100)):td('—')), 'meteoblue Sichtweite; hilfreich als Transparenz-Indikator, aber kein Ersatz für astronomische Extinktion/Aerosolmessung.'));
+  html.push(row('CAPE meteoblue',rows.map(r=>Number.isFinite(r.mbCape)?cellByQuality(fmt(r.mbCape,0,' J/kg'),scaleQuality(r.mbCape,20,800)):td('—')), 'Konvektive verfügbare potentielle Energie aus meteoblue Air; hohe Werte sprechen gegen eine ruhige Atmosphäre.'));
 
+  html.push(row('Seeing meteoblue',rows.map(r=>Number.isFinite(r.mbSeeing)?cellByQuality(`${r.mbSeeing.toFixed(2)}″`,scaleQuality(r.mbSeeing,0.55,2.8),'','meteoblue seeing_arcsec – direkte optische Seeing-Prognose'):td('—','','Paket seeing-1h ist für diesen Key nicht verfügbar oder liefert für diesen Zeitpunkt keinen Wert.')), 'Offizielles meteoblue seeing_arcsec aus dem Paket seeing-1h. Wird als primäre Seeing-Zahl verwendet, wenn verfügbar.'));
+  html.push(row('Seeing Index 1',rows.map(r=>td(Number.isFinite(r.mbSeeing1)?r.mbSeeing1.toFixed(2):'—'))));
+  html.push(row('Seeing Index 2',rows.map(r=>td(Number.isFinite(r.mbSeeing2)?r.mbSeeing2.toFixed(2):'—'))));
   html.push(row('Seeing 7Timer',rows.map(r=>{
     const info=seeingInfo(r.seeingIndex);
     return info?cellByQuality(info.label,seeingQualityFromIndex(r.seeingIndex),'',`7Timer Seeing-Klasse ${r.seeingIndex}/8`):td('—','','7Timer ASTRO liefert nur ungefähr 3 Tage bzw. Quelle ist nicht verfügbar.');
@@ -397,7 +522,10 @@ function renderTable() {
   html.push(row('Seeing Modell',rows.map(r=>cellByQuality(Number.isFinite(r.atmQuality)?`${r.atmQuality}/100`:'—',r.atmQuality,'',
     'Turbulenzindikator aus vertikalem Temperaturgradienten, Windscherung, Jetstream, Vertikalbewegung, CAPE und Bodenwind. Keine direkte Arcsec-Prognose.')),
     'Unabhängiger Atmosphären-Turbulenzindikator. 100 = ruhige/stabile Atmosphäre. Kein Ersatz für optisches Seeing in Bogensekunden.'));
-  html.push(row('Konfidenz',rows.map(r=>cellByQuality(r.seeingConfidence,confidenceQuality(r.seeingConfidence))),'Übereinstimmung zwischen 7Timer-Sehen und unabhängigem Atmosphärenindikator.'));
+  html.push(row('Seeing-Konsens',rows.map(r=>cellByQuality(r.seeingConfidence,confidenceQuality(r.seeingConfidence))),'Übereinstimmung zwischen meteoblue, 7Timer und/oder unabhängigem Atmosphärenindikator.'));
+  html.push(row('Jet meteoblue',rows.map(r=>td(Number.isFinite(r.mbJet)?fmt(r.mbJet,1):'—')), 'Jetstream-Wert direkt aus dem meteoblue seeing-1h Paket; Einheit gemäß meteoblue API-Antwort.'));
+  html.push(row('Bad Layer MB',rows.map(r=>td(Number.isFinite(r.mbBadBottom)&&Number.isFinite(r.mbBadTop)?`${fmt(r.mbBadBottom,1)}–${fmt(r.mbBadTop,1)}`:'—')), 'Unter- und Obergrenze der von meteoblue als ungünstig erkannten Atmosphärenschicht.'));
+  html.push(row('Bad Grad. MB',rows.map(r=>td(Number.isFinite(r.mbBadGradient)?fmt(r.mbBadGradient,2):'—')), 'Gradient der meteoblue Bad-Layer-Diagnostik.'));
   html.push(row('Transparenz 7Timer',rows.map(r=>r.transIndex?cellByQuality(`${r.transIndex}/8`,transparencyQuality(r.transIndex),'','7Timer: 1 ist beste Transparenz, 8 die schlechteste.'):td('—'))));
   html.push(row('Jet 250/300',rows.map(r=>cellByQuality(fmt(r.jetMs*3.6,0,' km/h'),scaleQuality(r.jetMs,8,40))),'Stärkster Höhenwind aus 250/300 hPa. Meteoblue weist >20 m/s typischerweise als ungünstig für Seeing aus.'));
   html.push(row('Max. Scherung',rows.map(r=>cellByQuality(fmt(r.maxShear,1,' m/s/km'),scaleQuality(r.maxShear,2.5,18))),'Maximale Windänderung pro Kilometer zwischen ausgewerteten Druckflächen.'));
