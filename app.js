@@ -485,23 +485,22 @@ function renderSummary() {
   const rows=visibleRows(), night=r=>r.sunAlt<=-12;
   const bestDeep=bestBy(rows,r=>r.deep,night)||bestBy(rows,r=>r.deep);
   const bestPlanet=bestBy(rows,r=>r.planetary,night)||bestBy(rows,r=>r.planetary);
-  const mbSeeingRows=rows.filter(r=>Number.isFinite(r.mbSeeing)&&night(r)).sort((a,b)=>a.mbSeeing-b.mbSeeing);
-  const seeingRows=rows.filter(r=>seeingInfo(r.seeingIndex)&&night(r)).sort((a,b)=>seeingInfo(a.seeingIndex).representative-seeingInfo(b.seeingIndex).representative);
-  const modelRows=rows.filter(r=>Number.isFinite(r.atmQuality)&&night(r)).sort((a,b)=>b.atmQuality-a.atmQuality);
-  const bestSeeing=mbSeeingRows[0]||seeingRows[0]||modelRows[0];
-  const bestCloud=rows.filter(night).sort((a,b)=>a.cloudConsensus-b.cloudConsensus)[0];
+  const moonRow=rows.find(night)||rows[0];
 
-  $('#bestDeep').textContent=bestDeep?`${bestDeep.deep}/100`:'—'; $('#bestDeepNote').textContent=bestDeep?dateLabel(bestDeep):'—';
-  $('#bestPlanet').textContent=bestPlanet?`${bestPlanet.planetary}/100`:'—'; $('#bestPlanetNote').textContent=bestPlanet?dateLabel(bestPlanet):'—';
-  if (bestSeeing) {
-    const si=seeingInfo(bestSeeing.seeingIndex);
-    $('#bestSeeing').textContent=Number.isFinite(bestSeeing.mbSeeing)?`${bestSeeing.mbSeeing.toFixed(2)}″`:si?si.label:`Modell ${bestSeeing.atmQuality}/100`;
-    const src=Number.isFinite(bestSeeing.mbSeeing)?'meteoblue':si?'7Timer':'Atmosphärenmodell';
-    $('#bestSeeingNote').textContent=`${dateLabel(bestSeeing)} · ${src}${bestSeeing.seeingConfidence!=='—'?` · Konsens ${bestSeeing.seeingConfidence}`:''}`;
-  } else { $('#bestSeeing').textContent='—'; $('#bestSeeingNote').textContent='—'; }
-  $('#bestCloud').textContent=bestCloud?`${Math.round(bestCloud.cloudConsensus)} %`:'—'; $('#bestCloudNote').textContent=bestCloud?dateLabel(bestCloud):'—';
+  $('#bestDeep').textContent=bestDeep?`${bestDeep.deep}/100`:'—';
+  $('#bestDeepNote').textContent=bestDeep?dateLabel(bestDeep):'—';
+  $('#bestPlanet').textContent=bestPlanet?`${bestPlanet.planetary}/100`:'—';
+  $('#bestPlanetNote').textContent=bestPlanet?dateLabel(bestPlanet):'—';
+
+  if (moonRow) {
+    const above=Number.isFinite(moonRow.moonAlt)&&moonRow.moonAlt>0;
+    $('#moonSummary').textContent=`${fmt(moonRow.moonIllum*100,0,'%')}`;
+    $('#moonSummaryNote').textContent=`${dateLabel(moonRow)} · ${above?fmt(moonRow.moonAlt,0,'°'):'unter Horizont'}`;
+  } else {
+    $('#moonSummary').textContent='—';
+    $('#moonSummaryNote').textContent='—';
+  }
 }
-
 function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function td(value,cls='',title=''){return `<td class="${cls}"${title?` title="${escapeHtml(title)}"`:''}>${value}</td>`;}
 function row(label,cells,title=''){return `<tr><th class="row-label" scope="row"${title?` title="${escapeHtml(title)}"`:''}>${label}</th>${cells.join('')}</tr>`;}
