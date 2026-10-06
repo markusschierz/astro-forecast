@@ -432,30 +432,42 @@ function buildRows() {
     ]);
     const dewQ = dewQuality(temp,dew,rh);
     const windQ = weighted([[scaleQuality(wind,3,28),.7],[scaleQuality(gust,8,45),.3]]);
-    const precipQ = Math.min(scaleQuality(precip,0,1.5), scaleQuality(pop,5,80));
     const darkQ = darknessQuality(sm.sunAlt);
     const moonQ = 100 - moonPenalty(sm.moonAlt, sm.moonIllum);
     const seeingQ = Number.isFinite(mbSeeing) ? scaleQuality(mbSeeing, 0.55, 2.8) : (Number.isFinite(seeingQualityFromIndex(seeingIndex)) ? seeingQualityFromIndex(seeingIndex) : atm.quality);
 
-    const fogQ = Number.isFinite(mbFog) ? scaleQuality(mbFog, 5, 75) : NaN;
+    // Showstopper-Gates:
+    // Wolken und Nebel werden als gemeinsames Sichtbarkeitsrisiko behandelt.
+    // Wir nehmen den schlechteren Wert, nicht das Produkt, damit Nebel nicht
+    // doppelt bestraft wird, wenn er bereits in tiefer Bewölkung steckt.
+    const skyObstruction = Math.max(
+      Number.isFinite(cloudConsensus) ? cloudConsensus : 0,
+      Number.isFinite(mbFog) ? mbFog : 0
+    );
+    const skyGate = clamp((100 - skyObstruction) / 100, 0, 1);
 
-    // Wolken sind ein Gate, kein kompensierbarer Teilfaktor:
-    // Erst die theoretische Qualität bei freiem Himmel berechnen,
-    // danach mit dem wolkenfreien Anteil des konservativen Konsens multiplizieren.
-    const clearFraction = Number.isFinite(cloudConsensus)
-      ? clamp((100 - cloudConsensus) / 100, 0, 1)
+    // Niederschlag ist für offene Astro-Ausrüstung ein eigener Killer:
+    // Die Wahrscheinlichkeit wirkt bewusst überproportional stark.
+    // Modellierter Niederschlag ab 0.05 mm/h setzt den Gate auf 0.
+    const popGate = Number.isFinite(pop)
+      ? Math.pow(clamp(1 - pop / 100, 0, 1), 2)
       : 1;
+    const amountGate = Number.isFinite(precip)
+      ? clamp(1 - precip / 0.05, 0, 1)
+      : 1;
+    const precipGate = Math.min(popGate, amountGate);
 
+    // Basisqualität nur aus Faktoren, die einander sinnvoll kompensieren können.
     const deepBase = weighted([
-      [transQ,.30],[dewQ,.16],[windQ,.12],[precipQ,.12],
-      [moonQ,.12],[darkQ,.10],[fogQ,.08]
+      [transQ,.38],[dewQ,.20],[windQ,.16],[moonQ,.14],[darkQ,.12]
     ]);
     const planetaryBase = weighted([
-      [seeingQ,.62],[windQ,.14],[precipQ,.12],[darkQ,.12]
+      [seeingQ,.70],[windQ,.16],[darkQ,.14]
     ]);
 
-    let deep = deepBase * clearFraction;
-    let planetary = planetaryBase * clearFraction;
+    const usabilityGate = skyGate * precipGate;
+    let deep = deepBase * usabilityGate;
+    let planetary = planetaryBase * usabilityGate;
     if (sm.sunAlt > -6) { deep *= darkQ/100; planetary *= Math.max(.25,darkQ/100); }
 
     result.push({
