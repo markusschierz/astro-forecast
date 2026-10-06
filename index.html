@@ -83,9 +83,10 @@
     <section class="details-grid" id="details" hidden>
       <article class="card explainer">
         <h3>Score-Logik</h3>
-        <p><strong>Wolken sind ein Gate:</strong> Der kombinierte Wolken-Konsens begrenzt beide Astro-Scores direkt. 90&nbsp;% Wolken lassen höchstens 10&nbsp;% der sonst möglichen Qualität übrig; 100&nbsp;% Wolken ergeben Score 0.</p>
-        <p><strong>Deep Sky</strong> bewertet bei freiem Himmel vor allem Transparenz, danach Tau-Risiko, Wind, Niederschlag, Mondlicht und Dunkelheit.</p>
-        <p><strong>Planetary</strong> bewertet bei freiem Himmel vor allem Seeing, danach Wind, Niederschlag und Dunkelheit. Mondlicht hat praktisch keinen Einfluss.</p>
+        <p><strong>Showstopper-Gates:</strong> Wolken und Nebel begrenzen beide Astro-Scores direkt; verwendet wird der schlechtere der beiden Werte, damit Nebel nicht doppelt gezählt wird. 90&nbsp;% Sichtbehinderung lassen höchstens 10&nbsp;% der sonst möglichen Qualität übrig.</p>
+        <p><strong>Niederschlag</strong> ist ein separates Gate: schon die Wahrscheinlichkeit reduziert den Score stark; modellierter Niederschlag ab 0.05&nbsp;mm/h setzt den Astro-Score auf 0.</p>
+        <p><strong>Deep Sky</strong> bewertet bei nutzbarem Himmel vor allem Transparenz, danach Tau-Risiko, Wind, Mondlicht und Dunkelheit.</p>
+        <p><strong>Planetary</strong> bewertet bei nutzbarem Himmel vor allem Seeing, danach Wind und Dunkelheit. Mondlicht hat praktisch keinen Einfluss.</p>
       </article>
       <article class="card explainer">
         <h3>Datenquellen</h3>
@@ -110,7 +111,7 @@
   </dialog>
 
   <footer>
-    <span>Astro Forecast 3.5</span>
+    <span>Astro Forecast 3.6</span>
     <span>Open-Meteo · MeteoSwiss · meteoblue · 7Timer</span>
   </footer>
 </body>
