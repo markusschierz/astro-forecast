@@ -1,4 +1,4 @@
-const CACHE = 'astro-forecast-v3.7';
+const CACHE = 'astro-forecast-v3.8';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
