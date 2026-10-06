@@ -12,7 +12,7 @@ os.chdir(ROOT)
 CACHE = {}
 
 def fetch_json(url, timeout=15):
-    req = Request(url, headers={'User-Agent': 'AstroForecast-local/3.2', 'Accept': 'application/json'})
+    req = Request(url, headers={'User-Agent': 'AstroForecast-local/3.3', 'Accept': 'application/json'})
     try:
         with urlopen(req, timeout=timeout) as r:
             body = r.read()
@@ -53,7 +53,7 @@ class Handler(SimpleHTTPRequestHandler):
             params = urlencode({'lon': f'{lon:.3f}', 'lat': f'{lat:.3f}', 'product': 'astro', 'output': 'json'})
             url = 'https://www.7timer.info/bin/api.pl?' + params
             try:
-                req = Request(url, headers={'User-Agent': 'AstroForecast-local/3.2', 'Accept': 'application/json'})
+                req = Request(url, headers={'User-Agent': 'AstroForecast-local/3.3', 'Accept': 'application/json'})
                 with urlopen(req, timeout=12) as r: body = r.read()
                 json.loads(body.decode('utf-8'))
                 return self.send_raw_json(200, body)
@@ -77,12 +77,25 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception: pass
             query = urlencode(params)
             coord_key = f'{lat:.5f}|{lon:.5f}|{params.get("asl", "")}'
-            free = cached('free-1h|' + coord_key, 1800, lambda: fetch_json('https://my.meteoblue.com/packages/clouds-1h,air-3h?' + query))
-            if not free.get('ok'):
-                fallback = cached('free-3h|' + coord_key, 1800, lambda: fetch_json('https://my.meteoblue.com/packages/clouds-3h,air-3h?' + query))
-                if fallback.get('ok'):
-                    fallback['_fallback_from'] = 'clouds-1h,air-3h'
-                    free = fallback
+            candidates = [
+                'clouds-1h,air-1h',
+                'clouds-1h,air-3h',
+                'clouds-3h,air-3h',
+            ]
+            free = None
+            failed = []
+            selected = None
+            for packages in candidates:
+                candidate = cached('free|' + packages + '|' + coord_key, 1800, lambda packages=packages: fetch_json('https://my.meteoblue.com/packages/' + packages + '?' + query))
+                if candidate.get('ok'):
+                    free = candidate
+                    selected = packages
+                    break
+                failed.append({'packages': packages, 'status': candidate.get('status', 0), 'error': candidate.get('error')})
+            if free is None:
+                free = candidate
+            free['_packages'] = selected
+            free['_fallbacks_tried'] = failed
             seeing = cached('seeing|' + coord_key, 1800, lambda: fetch_json('https://my.meteoblue.com/packages/seeing-1h?' + query))
             return self.send_json(200, {'error': False, 'source': 'meteoblue', 'free': free, 'seeing': seeing})
 
@@ -104,6 +117,6 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    print(f'Astro Forecast 3.2: http://127.0.0.1:{port}')
+    print(f'Astro Forecast 3.3: http://127.0.0.1:{port}')
     print('meteoblue lokal: export METEOBLUE_API_KEY="..."')
     ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()
