@@ -237,7 +237,7 @@ async function refresh() {
     notes.push(state.astro ? '7Timer ASTRO geladen' : '7Timer ASTRO nicht verfügbar');
     const mbFree = state.meteoblue?.free;
     const mbSeeing = state.meteoblue?.seeing;
-    if (mbFree?.ok) notes.push(mbFree?.data?.data_1h ? 'meteoblue Clouds 1h / Air geladen' : 'meteoblue Clouds/Air geladen');
+    if (mbFree?.ok) { const p=mbFree?._packages || ''; notes.push(p.includes('clouds-1h') && p.includes('air-1h') ? 'meteoblue Clouds/Air 1h geladen' : p.includes('clouds-1h') ? 'meteoblue Clouds 1h / Air 3h geladen' : 'meteoblue Clouds/Air 3h geladen'); }
     else if (state.meteoblue) notes.push(`meteoblue Free-Pakete nicht verfügbar${mbFree?.status ? ` (HTTP ${mbFree.status})` : ''}`);
     else notes.push('meteoblue nicht konfiguriert/erreichbar');
     if (mbSeeing?.ok) notes.push('meteoblue Seeing geladen');
@@ -360,7 +360,7 @@ function buildRows() {
   const mbFreeData = state.meteoblue?.free?.ok ? state.meteoblue.free.data : null;
   const mbSeeingData = state.meteoblue?.seeing?.ok ? state.meteoblue.seeing.data : null;
   const mbCloudData = mbFreeData?.data_1h || mbFreeData?.data_3h || null;
-  const mbAirData = mbFreeData?.data_3h || mbFreeData?.data_1h || null;
+  const mbAirData = mbFreeData?.data_1h || mbFreeData?.data_3h || null;
   const mb1 = mbSeeingData?.data_1h || null;
   const mbCloudIndex = meteoblueIndex(mbCloudData);
   const mbAirIndex = meteoblueIndex(mbAirData);
@@ -392,7 +392,7 @@ function buildRows() {
     const transIndex = a && Number(a.transparency) !== -9999 ? Number(a.transparency) : null;
 
     const mbCloudI = nearestIndex(mbCloudIndex, dateUtc, mbFreeData?.data_1h ? 0 : 2);
-    const mbAirI = nearestIndex(mbAirIndex, dateUtc, mbFreeData?.data_3h ? 2 : 0);
+    const mbAirI = nearestIndex(mbAirIndex, dateUtc, mbFreeData?.data_1h ? 0 : 2);
     const mb1i = nearestIndex(mb1Index, dateUtc, 0);
     const mbCloud = mbCloudI === undefined ? NaN : seriesValue(mbCloudTotalSeries, mbCloudI);
     const mbLow = mbCloudI === undefined ? NaN : seriesValue(mbCloudLowSeries, mbCloudI);
@@ -495,9 +495,8 @@ function renderSummary() {
   $('#bestPlanetNote').textContent=bestPlanet?dateLabel(bestPlanet):'—';
 
   if (moonRow) {
-    const above=Number.isFinite(moonRow.moonAlt)&&moonRow.moonAlt>0;
     $('#moonSummary').textContent=`${fmt(moonRow.moonIllum*100,0,'%')}`;
-    $('#moonSummaryNote').textContent=`${dateLabel(moonRow)} · ${above?fmt(moonRow.moonAlt,0,'°'):'unter Horizont'}`;
+    $('#moonSummaryNote').textContent=`${dateLabel(moonRow)} · ${signedDeg(moonRow.moonAlt)}`;
   } else {
     $('#moonSummary').textContent='—';
     $('#moonSummaryNote').textContent='—';
@@ -507,6 +506,7 @@ function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':
 function td(value,cls='',title=''){return `<td class="${cls}"${title?` title="${escapeHtml(title)}"`:''}>${value}</td>`;}
 function row(label,cells,title=''){return `<tr><th class="row-label" scope="row"${title?` title="${escapeHtml(title)}"`:''}>${label}</th>${cells.join('')}</tr>`;}
 function fmt(v,d=0,s=''){return Number.isFinite(v)?`${v.toFixed(d)}${s}`:'—';}
+function signedDeg(v){if(!Number.isFinite(v))return '—';const n=Math.round(v);return `${n>=0?'+':''}${n}°`;}
 function cellByQuality(text,q,extra='',title=''){return td(text,`${scoreClass(Number.isFinite(q)?q:50)} ${extra}`.trim(),title);}
 function cellByBadPercent(v,text=null){return cellByQuality(text??fmt(v,0,'%'),percentQuality(v));}
 function nightClass(r){if(r.sunAlt<=-18)return'astronomical';if(r.sunAlt<=-6)return'night';return'daylight';}
@@ -519,84 +519,117 @@ function detailGroup(label, group, rows, note='') {
   return `<tr class="detail-group-row"><th colspan="${rows.length + 1}"><button type="button" class="detail-toggle" data-group="${group}" aria-expanded="false"><span class="toggle-icon">▸</span><span>${label}</span>${note ? `<small>${note}</small>` : ''}</button></th></tr>`;
 }
 
-function renderTable() {
-  const rows=visibleRows(); if(!rows.length)return;
+function nightKey(r) {
+  const date = r.localTime.slice(0,10);
+  const hour = Number(r.localTime.slice(11,13));
+  if (hour >= 12) return date;
+  const d = new Date(date + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate()-1);
+  return d.toISOString().slice(0,10);
+}
+function groupNights(rows) {
+  const groups = [];
+  const map = new Map();
+  for (const r of rows) {
+    const key = nightKey(r);
+    if (!map.has(key)) {
+      const g={key,rows:[]}; map.set(key,g); groups.push(g);
+    }
+    map.get(key).rows.push(r);
+  }
+  return groups;
+}
+function nightLabel(rows) {
+  if (!rows.length) return '';
+  const first=rows[0], last=rows[rows.length-1];
+  const a=`${formatLocal(first.dateUtc,{weekday:'short'})} ${formatLocal(first.dateUtc,{day:'2-digit',month:'2-digit'})}`;
+  const b=`${formatLocal(last.dateUtc,{weekday:'short'})} ${formatLocal(last.dateUtc,{day:'2-digit',month:'2-digit'})}`;
+  return a===b ? a : `${a} → ${b}`;
+}
+
+function renderNightTable(rows, nightIndex) {
+  const group = name => `${name}-${nightIndex}`;
   const head=rows.map(r=>`<th class="date-cell ${nightClass(r)}"><div>${formatLocal(r.dateUtc,{weekday:'short'})} ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})}</div><strong>${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}</strong></th>`);
   const html=[]; html.push(`<thead><tr><th class="row-label">Zeit</th>${head.join('')}</tr></thead><tbody>`);
-
   // Kompakte Standardansicht.
   html.push(row('Deep Sky',rows.map(r=>cellByQuality(r.deep,r.deep,'score'))));
   html.push(row('Planetary',rows.map(r=>cellByQuality(r.planetary,r.planetary,'score'))));
   html.push(row('Mond',rows.map(r=>{
-    const above = Number.isFinite(r.moonAlt) && r.moonAlt > 0;
-    const text = `${fmt(r.moonIllum*100,0,'%')} · ${above ? fmt(r.moonAlt,0,'°') : 'unter Horizont'}`;
+    const text = `${fmt(r.moonIllum*100,0,'%')} · ${signedDeg(r.moonAlt)}`;
     return cellByQuality(text,100-moonPenalty(r.moonAlt,r.moonIllum),'','Beleuchtung · Mondhöhe. Die Farbe bewertet den Einfluss des Mondlichts.');
   }),'Mondbeleuchtung und Mondhöhe. Unter dem Horizont verursacht der Mond keinen Lichtabzug im Deep-Sky-Score.'));
 
-  html.push(detailGroup('Wolken & Transparenz','clouds',rows,'Quellenvergleich und Schichten'));
-  html.push(detailRow('clouds','Wolken-Konsens',rows.map(r=>cellByBadPercent(r.cloudConsensus)), 'Konservativer Konsens aus MeteoSwiss ICON-CH und meteoblue mLM; bei nur einer verfügbaren Quelle wird diese verwendet.'));
-  html.push(detailRow('clouds','MeteoSwiss gesamt',rows.map(r=>cellByBadPercent(r.cloud))));
-  html.push(detailRow('clouds','meteoblue gesamt',rows.map(r=>Number.isFinite(r.mbCloud)?cellByBadPercent(r.mbCloud):td('—'))));
-  html.push(detailRow('clouds','MeteoSwiss tief',rows.map(r=>cellByBadPercent(r.low))));
-  html.push(detailRow('clouds','meteoblue tief',rows.map(r=>Number.isFinite(r.mbLow)?cellByBadPercent(r.mbLow):td('—'))));
-  html.push(detailRow('clouds','MeteoSwiss mittel',rows.map(r=>cellByBadPercent(r.mid))));
-  html.push(detailRow('clouds','meteoblue mittel',rows.map(r=>Number.isFinite(r.mbMid)?cellByBadPercent(r.mbMid):td('—'))));
-  html.push(detailRow('clouds','MeteoSwiss hoch',rows.map(r=>cellByBadPercent(r.high))));
-  html.push(detailRow('clouds','meteoblue hoch',rows.map(r=>Number.isFinite(r.mbHigh)?cellByBadPercent(r.mbHigh):td('—'))));
-  html.push(detailRow('clouds','Nebelrisiko MB',rows.map(r=>Number.isFinite(r.mbFog)?cellByQuality(fmt(r.mbFog,0,'%'),scaleQuality(r.mbFog,5,75)):td('—')), 'meteoblue fog_probability aus dem Clouds-Paket.'));
-  html.push(detailRow('clouds','Sichtweite MB',rows.map(r=>Number.isFinite(r.mbVisibility)?cellByQuality(fmt(r.mbVisibility/1000,1,' km'),clamp((r.mbVisibility-5000)/(30000-5000)*100,0,100)):td('—')), 'meteoblue Sichtweite; hilfreich als Transparenz-Indikator, aber kein Ersatz für astronomische Extinktion/Aerosolmessung.'));
-  html.push(detailRow('clouds','Transparenz 7Timer',rows.map(r=>r.transIndex?cellByQuality(`${r.transIndex}/8`,transparencyQuality(r.transIndex),'','7Timer: 1 ist beste Transparenz, 8 die schlechteste.'):td('—'))));
+  html.push(detailGroup('Wolken & Transparenz',group('clouds'),rows,'Quellenvergleich und Schichten'));
+  html.push(detailRow(group('clouds'),'Wolken-Konsens',rows.map(r=>cellByBadPercent(r.cloudConsensus)), 'Konservativer Konsens aus MeteoSwiss ICON-CH und meteoblue mLM; bei nur einer verfügbaren Quelle wird diese verwendet.'));
+  html.push(detailRow(group('clouds'),'MeteoSwiss gesamt',rows.map(r=>cellByBadPercent(r.cloud))));
+  html.push(detailRow(group('clouds'),'meteoblue gesamt',rows.map(r=>Number.isFinite(r.mbCloud)?cellByBadPercent(r.mbCloud):td('—'))));
+  html.push(detailRow(group('clouds'),'MeteoSwiss tief',rows.map(r=>cellByBadPercent(r.low))));
+  html.push(detailRow(group('clouds'),'meteoblue tief',rows.map(r=>Number.isFinite(r.mbLow)?cellByBadPercent(r.mbLow):td('—'))));
+  html.push(detailRow(group('clouds'),'MeteoSwiss mittel',rows.map(r=>cellByBadPercent(r.mid))));
+  html.push(detailRow(group('clouds'),'meteoblue mittel',rows.map(r=>Number.isFinite(r.mbMid)?cellByBadPercent(r.mbMid):td('—'))));
+  html.push(detailRow(group('clouds'),'MeteoSwiss hoch',rows.map(r=>cellByBadPercent(r.high))));
+  html.push(detailRow(group('clouds'),'meteoblue hoch',rows.map(r=>Number.isFinite(r.mbHigh)?cellByBadPercent(r.mbHigh):td('—'))));
+  html.push(detailRow(group('clouds'),'Nebelrisiko MB',rows.map(r=>Number.isFinite(r.mbFog)?cellByQuality(fmt(r.mbFog,0,'%'),scaleQuality(r.mbFog,5,75)):td('—')), 'meteoblue fog_probability aus dem Clouds-Paket.'));
+  html.push(detailRow(group('clouds'),'Sichtweite MB',rows.map(r=>Number.isFinite(r.mbVisibility)?cellByQuality(fmt(r.mbVisibility/1000,1,' km'),clamp((r.mbVisibility-5000)/(30000-5000)*100,0,100)):td('—')), 'meteoblue Sichtweite; hilfreich als Transparenz-Indikator, aber kein Ersatz für astronomische Extinktion/Aerosolmessung.'));
+  html.push(detailRow(group('clouds'),'Transparenz 7Timer',rows.map(r=>r.transIndex?cellByQuality(`${r.transIndex}/8`,transparencyQuality(r.transIndex),'','7Timer: 1 ist beste Transparenz, 8 die schlechteste.'):td('—'))));
 
-  html.push(detailGroup('Seeing & Atmosphäre','seeing',rows,'Seeing, Jetstream und Turbulenz'));
-  html.push(detailRow('seeing','Seeing meteoblue',rows.map(r=>Number.isFinite(r.mbSeeing)?cellByQuality(`${r.mbSeeing.toFixed(2)}″`,scaleQuality(r.mbSeeing,0.55,2.8),'','meteoblue seeing_arcsec – direkte optische Seeing-Prognose'):td('—','','Paket seeing-1h ist für diesen Key nicht verfügbar oder liefert für diesen Zeitpunkt keinen Wert.')), 'Offizielles meteoblue seeing_arcsec aus dem Paket seeing-1h. Wird als primäre Seeing-Zahl verwendet, wenn verfügbar.'));
-  html.push(detailRow('seeing','Seeing Index 1',rows.map(r=>td(Number.isFinite(r.mbSeeing1)?r.mbSeeing1.toFixed(2):'—'))));
-  html.push(detailRow('seeing','Seeing Index 2',rows.map(r=>td(Number.isFinite(r.mbSeeing2)?r.mbSeeing2.toFixed(2):'—'))));
-  html.push(detailRow('seeing','Seeing 7Timer',rows.map(r=>{
+  html.push(detailGroup('Seeing & Atmosphäre',group('seeing'),rows,'Seeing, Jetstream und Turbulenz'));
+  html.push(detailRow(group('seeing'),'Seeing meteoblue',rows.map(r=>Number.isFinite(r.mbSeeing)?cellByQuality(`${r.mbSeeing.toFixed(2)}″`,scaleQuality(r.mbSeeing,0.55,2.8),'','meteoblue seeing_arcsec – direkte optische Seeing-Prognose'):td('—','','Paket seeing-1h ist für diesen Key nicht verfügbar oder liefert für diesen Zeitpunkt keinen Wert.')), 'Offizielles meteoblue seeing_arcsec aus dem Paket seeing-1h. Wird als primäre Seeing-Zahl verwendet, wenn verfügbar.'));
+  html.push(detailRow(group('seeing'),'Seeing Index 1',rows.map(r=>td(Number.isFinite(r.mbSeeing1)?r.mbSeeing1.toFixed(2):'—'))));
+  html.push(detailRow(group('seeing'),'Seeing Index 2',rows.map(r=>td(Number.isFinite(r.mbSeeing2)?r.mbSeeing2.toFixed(2):'—'))));
+  html.push(detailRow(group('seeing'),'Seeing 7Timer',rows.map(r=>{
     const info=seeingInfo(r.seeingIndex);
     return info?cellByQuality(info.label,seeingQualityFromIndex(r.seeingIndex),'',`7Timer Seeing-Klasse ${r.seeingIndex}/8`):td('—','','7Timer ASTRO liefert nur ungefähr 3 Tage bzw. Quelle ist nicht verfügbar.');
   }),'Explizite astronomische Seeing-Vorhersage von 7Timer ASTRO. Bereiche werden unverändert als Klasse gezeigt.'));
-  html.push(detailRow('seeing','Seeing Modell',rows.map(r=>cellByQuality(Number.isFinite(r.atmQuality)?`${r.atmQuality}/100`:'—',r.atmQuality,'',
+  html.push(detailRow(group('seeing'),'Seeing Modell',rows.map(r=>cellByQuality(Number.isFinite(r.atmQuality)?`${r.atmQuality}/100`:'—',r.atmQuality,'',
     'Turbulenzindikator aus vertikalem Temperaturgradienten, Windscherung, Jetstream, Vertikalbewegung, CAPE und Bodenwind. Keine direkte Arcsec-Prognose.')),
     'Unabhängiger Atmosphären-Turbulenzindikator. 100 = ruhige/stabile Atmosphäre. Kein Ersatz für optisches Seeing in Bogensekunden.'));
-  html.push(detailRow('seeing','Seeing-Konsens',rows.map(r=>cellByQuality(r.seeingConfidence,confidenceQuality(r.seeingConfidence))),'Übereinstimmung zwischen meteoblue, 7Timer und/oder unabhängigem Atmosphärenindikator.'));
-  html.push(detailRow('seeing','Jet meteoblue',rows.map(r=>td(Number.isFinite(r.mbJet)?fmt(r.mbJet,1):'—')), 'Jetstream-Wert direkt aus dem meteoblue seeing-1h Paket; Einheit gemäß meteoblue API-Antwort.'));
-  html.push(detailRow('seeing','Bad Layer MB',rows.map(r=>td(Number.isFinite(r.mbBadBottom)&&Number.isFinite(r.mbBadTop)?`${fmt(r.mbBadBottom,1)}–${fmt(r.mbBadTop,1)}`:'—')), 'Unter- und Obergrenze der von meteoblue als ungünstig erkannten Atmosphärenschicht.'));
-  html.push(detailRow('seeing','Bad Grad. MB',rows.map(r=>td(Number.isFinite(r.mbBadGradient)?fmt(r.mbBadGradient,2):'—')), 'Gradient der meteoblue Bad-Layer-Diagnostik.'));
-  html.push(detailRow('seeing','Jet 250/300',rows.map(r=>cellByQuality(fmt(r.jetMs*3.6,0,' km/h'),scaleQuality(r.jetMs,8,40))),'Stärkster Höhenwind aus 250/300 hPa.'));
-  html.push(detailRow('seeing','Max. Scherung',rows.map(r=>cellByQuality(fmt(r.maxShear,1,' m/s/km'),scaleQuality(r.maxShear,2.5,18))),'Maximale Windänderung pro Kilometer zwischen ausgewerteten Druckflächen.'));
-  html.push(detailRow('seeing','Min. Ri',rows.map(r=>{
+  html.push(detailRow(group('seeing'),'Seeing-Konsens',rows.map(r=>cellByQuality(r.seeingConfidence,confidenceQuality(r.seeingConfidence))),'Übereinstimmung zwischen meteoblue, 7Timer und/oder unabhängigem Atmosphärenindikator.'));
+  html.push(detailRow(group('seeing'),'Jet meteoblue',rows.map(r=>td(Number.isFinite(r.mbJet)?fmt(r.mbJet,1):'—')), 'Jetstream-Wert direkt aus dem meteoblue seeing-1h Paket; Einheit gemäß meteoblue API-Antwort.'));
+  html.push(detailRow(group('seeing'),'Bad Layer MB',rows.map(r=>td(Number.isFinite(r.mbBadBottom)&&Number.isFinite(r.mbBadTop)?`${fmt(r.mbBadBottom,1)}–${fmt(r.mbBadTop,1)}`:'—')), 'Unter- und Obergrenze der von meteoblue als ungünstig erkannten Atmosphärenschicht.'));
+  html.push(detailRow(group('seeing'),'Bad Grad. MB',rows.map(r=>td(Number.isFinite(r.mbBadGradient)?fmt(r.mbBadGradient,2):'—')), 'Gradient der meteoblue Bad-Layer-Diagnostik.'));
+  html.push(detailRow(group('seeing'),'Jet 250/300',rows.map(r=>cellByQuality(fmt(r.jetMs*3.6,0,' km/h'),scaleQuality(r.jetMs,8,40))),'Stärkster Höhenwind aus 250/300 hPa.'));
+  html.push(detailRow(group('seeing'),'Max. Scherung',rows.map(r=>cellByQuality(fmt(r.maxShear,1,' m/s/km'),scaleQuality(r.maxShear,2.5,18))),'Maximale Windänderung pro Kilometer zwischen ausgewerteten Druckflächen.'));
+  html.push(detailRow(group('seeing'),'Min. Ri',rows.map(r=>{
     const q=!Number.isFinite(r.minRi)?50:r.minRi<0?5:r.minRi<.25?30:r.minRi<1?70:95;
     return cellByQuality(Number.isFinite(r.minRi)?r.minRi.toFixed(2):'—',q,'','Gradient-Richardson-Zahl; Werte <0.25 deuten auf erhöhte dynamische Turbulenzneigung hin.');
   }),'Gradient-Richardson-Zahl als Turbulenzdiagnostik; nicht mit Seeing in Arcsec verwechseln.'));
-  html.push(detailRow('seeing','Schlechteste Schicht',rows.map(r=>{
+  html.push(detailRow(group('seeing'),'Schlechteste Schicht',rows.map(r=>{
     const b=r.badLayer; return td(b?`${(b.bottom/1000).toFixed(1)}–${(b.top/1000).toFixed(1)} km`:'—');
   })));
 
-  html.push(detailGroup('Wetter & Tau','weather',rows,'Wind, Feuchte und Niederschlag'));
-  html.push(detailRow('weather','Wind',rows.map(r=>cellByQuality(fmt(r.wind,0,' km/h'),scaleQuality(r.wind,3,28)))));
-  html.push(detailRow('weather','Böen',rows.map(r=>cellByQuality(fmt(r.gust,0,' km/h'),scaleQuality(r.gust,8,45)))));
-  html.push(detailRow('weather','Temperatur',rows.map(r=>td(fmt(r.temp,1,'°')))));
-  html.push(detailRow('weather','Taupunkt',rows.map(r=>td(fmt(r.dew,1,'°')))));
-  html.push(detailRow('weather','ΔT Tau',rows.map(r=>cellByQuality(fmt(r.temp-r.dew,1,' K'),r.dewQ))));
-  html.push(detailRow('weather','Feuchte',rows.map(r=>cellByQuality(fmt(r.rh,0,'%'),scaleQuality(r.rh,55,98)))));
-  html.push(detailRow('weather','Niederschlag',rows.map(r=>cellByQuality(`${fmt(r.precip,1,' mm')} / ${fmt(r.pop,0,'%')}`,Math.min(scaleQuality(r.precip,0,1.5),scaleQuality(r.pop,5,80))))));
-  html.push(detailRow('weather','Wolkenbasis',rows.map(r=>td(Number.isFinite(r.cloudBase)?`${Math.round(r.cloudBase)} m`:'—'))));
-  html.push(detailRow('weather','CAPE meteoblue',rows.map(r=>Number.isFinite(r.mbCape)?cellByQuality(fmt(r.mbCape,0,' J/kg'),scaleQuality(r.mbCape,20,800)):td('—')), 'Konvektive verfügbare potentielle Energie aus meteoblue Air.'));
+  html.push(detailGroup('Wetter & Tau',group('weather'),rows,'Wind, Feuchte und Niederschlag'));
+  html.push(detailRow(group('weather'),'Wind',rows.map(r=>cellByQuality(fmt(r.wind,0,' km/h'),scaleQuality(r.wind,3,28)))));
+  html.push(detailRow(group('weather'),'Böen',rows.map(r=>cellByQuality(fmt(r.gust,0,' km/h'),scaleQuality(r.gust,8,45)))));
+  html.push(detailRow(group('weather'),'Temperatur',rows.map(r=>td(fmt(r.temp,1,'°')))));
+  html.push(detailRow(group('weather'),'Taupunkt',rows.map(r=>td(fmt(r.dew,1,'°')))));
+  html.push(detailRow(group('weather'),'ΔT Tau',rows.map(r=>cellByQuality(fmt(r.temp-r.dew,1,' K'),r.dewQ))));
+  html.push(detailRow(group('weather'),'Feuchte',rows.map(r=>cellByQuality(fmt(r.rh,0,'%'),scaleQuality(r.rh,55,98)))));
+  html.push(detailRow(group('weather'),'Niederschlag',rows.map(r=>cellByQuality(`${fmt(r.precip,1,' mm')} / ${fmt(r.pop,0,'%')}`,Math.min(scaleQuality(r.precip,0,1.5),scaleQuality(r.pop,5,80))))));
+  html.push(detailRow(group('weather'),'Wolkenbasis',rows.map(r=>td(Number.isFinite(r.cloudBase)?`${Math.round(r.cloudBase)} m`:'—'))));
+  html.push(detailRow(group('weather'),'CAPE meteoblue',rows.map(r=>Number.isFinite(r.mbCape)?cellByQuality(fmt(r.mbCape,0,' J/kg'),scaleQuality(r.mbCape,20,800)):td('—')), 'Konvektive verfügbare potentielle Energie aus meteoblue Air.'));
 
-  html.push(detailGroup('Dämmerung & Mond','astro',rows,'Sonnen- und Mondhöhe'));
-  html.push(detailRow('astro','Sonnenhöhe',rows.map(r=>cellByQuality(fmt(r.sunAlt,0,'°'),darknessQuality(r.sunAlt)))));
-  html.push(detailRow('astro','Mondhöhe',rows.map(r=>td(fmt(r.moonAlt,0,'°')))));
-  html.push(detailRow('astro','Mondlicht',rows.map(r=>cellByQuality(fmt(r.moonIllum*100,0,'%'),100-moonPenalty(r.moonAlt,r.moonIllum)))));
+  html.push(detailGroup('Dämmerung & Mond',group('astro'),rows,'Sonnen- und Mondhöhe'));
+  html.push(detailRow(group('astro'),'Sonnenhöhe',rows.map(r=>cellByQuality(fmt(r.sunAlt,0,'°'),darknessQuality(r.sunAlt)))));
+  html.push(detailRow(group('astro'),'Mondhöhe',rows.map(r=>td(fmt(r.moonAlt,0,'°')))));
+  html.push(detailRow(group('astro'),'Mondlicht',rows.map(r=>cellByQuality(fmt(r.moonIllum*100,0,'%'),100-moonPenalty(r.moonAlt,r.moonIllum)))));
+
 
   html.push('</tbody>');
-  const table=$('#forecastTable');
-  table.innerHTML=html.join('');
-  table.querySelectorAll('.detail-toggle').forEach(btn=>btn.addEventListener('click',()=>{
+  return `<section class="night-block"><h3 class="night-title">${nightLabel(rows)}</h3><div class="night-table-wrap"><table class="forecast-table" aria-label="Astro Forecast ${escapeHtml(nightLabel(rows))}">${html.join('')}</table></div></section>`;
+}
+
+function renderTable() {
+  const rows=visibleRows(); if(!rows.length)return;
+  const host=$('#forecastNights');
+  const nights=groupNights(rows);
+  host.innerHTML=nights.map((n,i)=>renderNightTable(n.rows,i)).join('');
+  host.querySelectorAll('.detail-toggle').forEach(btn=>btn.addEventListener('click',()=>{
     const group=btn.dataset.group;
     const open=btn.getAttribute('aria-expanded')==='true';
     btn.setAttribute('aria-expanded',String(!open));
     const icon=btn.querySelector('.toggle-icon'); if(icon) icon.textContent=open?'▸':'▾';
-    table.querySelectorAll(`.detail-${group}`).forEach(tr=>{tr.hidden=open;});
+    host.querySelectorAll(`.detail-${group}`).forEach(tr=>{tr.hidden=open;});
   }));
 }
 function setStatus(text,mode=''){const el=$('#status');el.textContent=text;el.className=`status card ${mode}`.trim();}
