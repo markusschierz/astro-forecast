@@ -237,7 +237,7 @@ async function refresh() {
     notes.push(state.astro ? '7Timer ASTRO geladen' : '7Timer ASTRO nicht verfügbar');
     const mbFree = state.meteoblue?.free;
     const mbSeeing = state.meteoblue?.seeing;
-    if (mbFree?.ok) notes.push('meteoblue Clouds/Air geladen');
+    if (mbFree?.ok) notes.push(mbFree?.data?.data_1h ? 'meteoblue Clouds 1h / Air geladen' : 'meteoblue Clouds/Air geladen');
     else if (state.meteoblue) notes.push(`meteoblue Free-Pakete nicht verfügbar${mbFree?.status ? ` (HTTP ${mbFree.status})` : ''}`);
     else notes.push('meteoblue nicht konfiguriert/erreichbar');
     if (mbSeeing?.ok) notes.push('meteoblue Seeing geladen');
@@ -459,9 +459,9 @@ function visibleRows() {
   const base = horizonRows();
   if (!base.length) return [];
 
-  // Nur Nachtplanung anzeigen. Die 3-h-Spalte direkt vor dem ersten
+  // Nur Nachtplanung anzeigen. Die Stunde direkt vor dem ersten
   // Sonnenstand unter 0° und direkt nach dem letzten wird mitgenommen,
-  // damit der Slot mit Sonnenuntergang bzw. Sonnenaufgang sichtbar bleibt.
+  // damit Sonnenuntergang bzw. Sonnenaufgang im Stundenraster sichtbar bleiben.
   const keep = new Set();
   base.forEach((r, i) => {
     if (Number.isFinite(r.sunAlt) && r.sunAlt <= 0) {
