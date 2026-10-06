@@ -211,3 +211,31 @@ dialog p { color: #b7c4d8; line-height: 1.55; }
   font-size: .9rem;
 }
 .detail-row[hidden] { display: none; }
+
+.forecast-nights {
+  display: grid;
+  gap: 14px;
+  padding: 0 0 14px;
+  border-top: 1px solid var(--line);
+}
+.night-block {
+  border-top: 1px solid #1a2840;
+  background: rgba(7, 12, 22, .32);
+}
+.night-block:first-child { border-top: 0; }
+.night-title {
+  margin: 0;
+  padding: .7rem .85rem;
+  font-size: .9rem;
+  color: #dfe9f8;
+  background: #0a1120;
+  border-bottom: 1px solid var(--line);
+}
+.night-table-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+.night-table-wrap .forecast-table {
+  width: max-content;
+  min-width: 100%;
+}
