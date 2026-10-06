@@ -359,8 +359,9 @@ function buildRows() {
   const astro = buildAstroIndex();
   const mbFreeData = state.meteoblue?.free?.ok ? state.meteoblue.free.data : null;
   const mbSeeingData = state.meteoblue?.seeing?.ok ? state.meteoblue.seeing.data : null;
-  const mbCloudData = mbFreeData?.data_1h || mbFreeData?.data_3h || null;
-  const mbAirData = mbFreeData?.data_1h || mbFreeData?.data_3h || null;
+  const mbPackages = state.meteoblue?.free?._packages || '';
+  const mbCloudData = mbPackages.includes('clouds-1h') ? (mbFreeData?.data_1h || null) : (mbFreeData?.data_3h || mbFreeData?.data_1h || null);
+  const mbAirData = mbPackages.includes('air-1h') ? (mbFreeData?.data_1h || null) : (mbFreeData?.data_3h || mbFreeData?.data_1h || null);
   const mb1 = mbSeeingData?.data_1h || null;
   const mbCloudIndex = meteoblueIndex(mbCloudData);
   const mbAirIndex = meteoblueIndex(mbAirData);
@@ -391,8 +392,8 @@ function buildRows() {
     const seeingIndex = a && Number(a.seeing) !== -9999 ? Number(a.seeing) : null;
     const transIndex = a && Number(a.transparency) !== -9999 ? Number(a.transparency) : null;
 
-    const mbCloudI = nearestIndex(mbCloudIndex, dateUtc, mbFreeData?.data_1h ? 0 : 2);
-    const mbAirI = nearestIndex(mbAirIndex, dateUtc, mbFreeData?.data_1h ? 0 : 2);
+    const mbCloudI = nearestIndex(mbCloudIndex, dateUtc, mbPackages.includes('clouds-1h') ? 0 : 2);
+    const mbAirI = nearestIndex(mbAirIndex, dateUtc, mbPackages.includes('air-1h') ? 0 : 2);
     const mb1i = nearestIndex(mb1Index, dateUtc, 0);
     const mbCloud = mbCloudI === undefined ? NaN : seriesValue(mbCloudTotalSeries, mbCloudI);
     const mbLow = mbCloudI === undefined ? NaN : seriesValue(mbCloudLowSeries, mbCloudI);
