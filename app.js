@@ -483,7 +483,12 @@ function buildRows() {
   return result;
 }
 
-function horizonRows() { return state.rows.slice(0, state.hours); }
+function horizonRows() {
+  const currentHourStart = Math.floor(Date.now() / 3600000) * 3600000;
+  return state.rows
+    .filter(r => r.dateUtc.getTime() >= currentHourStart)
+    .slice(0, state.hours);
+}
 function visibleRows() {
   const base = horizonRows();
   if (!base.length) return [];
@@ -570,10 +575,12 @@ function groupNights(rows) {
 }
 function nightLabel(rows) {
   if (!rows.length) return '';
-  const first=rows[0], last=rows[rows.length-1];
-  const a=`${formatLocal(first.dateUtc,{weekday:'short'})} ${formatLocal(first.dateUtc,{day:'2-digit',month:'2-digit'})}`;
-  const b=`${formatLocal(last.dateUtc,{weekday:'short'})} ${formatLocal(last.dateUtc,{day:'2-digit',month:'2-digit'})}`;
-  return a===b ? a : `${a} → ${b}`;
+  const key = nightKey(rows[0]);
+  const start = new Date(key + 'T12:00:00Z');
+  const end = new Date(start.getTime() + 24 * 3600e3);
+  const a=`${formatLocal(start,{weekday:'short'})} ${formatLocal(start,{day:'2-digit',month:'2-digit'})}`;
+  const b=`${formatLocal(end,{weekday:'short'})} ${formatLocal(end,{day:'2-digit',month:'2-digit'})}`;
+  return `${a} → ${b}`;
 }
 
 function renderNightTable(rows, nightIndex) {
