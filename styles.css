@@ -53,7 +53,12 @@ h2, h3 { margin-top: 0; }
 .subtle { color: var(--muted); font-size: .9rem; }
 .header-actions { display: flex; gap: .5rem; }
 
-main { display: grid; gap: 14px; }
+main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+main > * { min-width: 0; }
 .card, .metric-card {
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(17, 26, 44, .95), rgba(11, 17, 30, .95));
@@ -92,7 +97,11 @@ input:focus { border-color: #5388c8; box-shadow: 0 0 0 3px rgba(83, 136, 200, .1
 .metric-value { font-size: 1.55rem; font-weight: 800; margin-top: .45rem; }
 .metric-note { color: #aebdd4; margin-top: .3rem; font-size: .86rem; }
 
-.forecast-card { overflow: hidden; }
+.forecast-card {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
 .forecast-head { padding: 14px 16px 10px; display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
 .forecast-head h2 { margin-bottom: .2rem; font-size: 1.05rem; }
 .forecast-head p { margin: 0; color: var(--muted); font-size: .86rem; }
@@ -217,10 +226,15 @@ dialog p { color: #b7c4d8; line-height: 1.55; }
   gap: 14px;
   padding: 0 0 14px;
   border-top: 1px solid var(--line);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .night-block {
   border-top: 1px solid #1a2840;
   background: rgba(7, 12, 22, .32);
+  min-width: 0;
+  max-width: 100%;
 }
 .night-block:first-child { border-top: 0; }
 .night-title {
@@ -232,10 +246,24 @@ dialog p { color: #b7c4d8; line-height: 1.55; }
   border-bottom: 1px solid var(--line);
 }
 .night-table-wrap {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
 }
 .night-table-wrap .forecast-table {
   width: max-content;
   min-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .night-table-wrap {
+    scrollbar-gutter: stable;
+  }
 }
