@@ -38,7 +38,7 @@ function http_get_json(string $url): array {
             CURLOPT_TIMEOUT => 15,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS => 3,
-            CURLOPT_USERAGENT => 'astro-foto.ch Astro Forecast/3.0',
+            CURLOPT_USERAGENT => 'astro-foto.ch Astro Forecast/3.2',
             CURLOPT_HTTPHEADER => ['Accept: application/json'],
             CURLOPT_HEADERFUNCTION => static function ($ch, string $line) use (&$headers): int {
                 $len = strlen($line);
@@ -59,7 +59,7 @@ function http_get_json(string $url): array {
         $context = stream_context_create(['http' => [
             'timeout' => 15,
             'ignore_errors' => true,
-            'header' => "User-Agent: astro-foto.ch Astro Forecast/3.0\r\nAccept: application/json\r\n",
+            'header' => "User-Agent: astro-foto.ch Astro Forecast/3.2\r\nAccept: application/json\r\n",
         ]]);
         $body = @file_get_contents($url, false, $context);
         if (isset($http_response_header) && is_array($http_response_header)) {
@@ -137,11 +137,24 @@ $makeUrl = static function (string $packages) use ($baseParams): string {
     return 'https://my.meteoblue.com/packages/' . $packages . '?' . http_build_query($baseParams, '', '&', PHP_QUERY_RFC3986);
 };
 
-// Free Weather API: Clouds 3h + Air 3h. 30 min Cache spart Credits bei Reloads.
-$freePackages = 'clouds-3h,air-3h';
+// Bevorzugt native Stundenwerte für Clouds. Air bleibt 3h, solange der Key
+// dafür keinen bestätigten 1h-Zugang hat. Falls clouds-1h nicht verfügbar ist,
+// fällt der Proxy automatisch auf clouds-3h zurück.
+$freePackages = 'clouds-1h,air-3h';
 $free = cached_request($freePackages . '|' . $baseParams['lat'] . '|' . $baseParams['lon'] . '|' . ($baseParams['asl'] ?? ''), 1800,
     static fn() => http_get_json($makeUrl($freePackages))
 );
+
+if (empty($free['ok'])) {
+    $fallbackPackages = 'clouds-3h,air-3h';
+    $fallback = cached_request($fallbackPackages . '|' . $baseParams['lat'] . '|' . $baseParams['lon'] . '|' . ($baseParams['asl'] ?? ''), 1800,
+        static fn() => http_get_json($makeUrl($fallbackPackages))
+    );
+    if (!empty($fallback['ok'])) {
+        $fallback['_fallback_from'] = $freePackages;
+        $free = $fallback;
+    }
+}
 
 // Seeing ist ein offizielles Paket, aber nicht im normalen Free-Zugang. Wir testen den Key trotzdem.
 $seeingPackages = 'seeing-1h';
