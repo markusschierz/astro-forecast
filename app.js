@@ -438,8 +438,24 @@ function buildRows() {
     const seeingQ = Number.isFinite(mbSeeing) ? scaleQuality(mbSeeing, 0.55, 2.8) : (Number.isFinite(seeingQualityFromIndex(seeingIndex)) ? seeingQualityFromIndex(seeingIndex) : atm.quality);
 
     const fogQ = Number.isFinite(mbFog) ? scaleQuality(mbFog, 5, 75) : NaN;
-    let deep = weighted([[cloudQ,.36],[transQ,.19],[dewQ,.10],[windQ,.08],[precipQ,.08],[moonQ,.07],[darkQ,.07],[fogQ,.05]]);
-    let planetary = weighted([[seeingQ,.46],[cloudQ,.27],[windQ,.12],[precipQ,.08],[darkQ,.07]]);
+
+    // Wolken sind ein Gate, kein kompensierbarer Teilfaktor:
+    // Erst die theoretische Qualität bei freiem Himmel berechnen,
+    // danach mit dem wolkenfreien Anteil des konservativen Konsens multiplizieren.
+    const clearFraction = Number.isFinite(cloudConsensus)
+      ? clamp((100 - cloudConsensus) / 100, 0, 1)
+      : 1;
+
+    const deepBase = weighted([
+      [transQ,.30],[dewQ,.16],[windQ,.12],[precipQ,.12],
+      [moonQ,.12],[darkQ,.10],[fogQ,.08]
+    ]);
+    const planetaryBase = weighted([
+      [seeingQ,.62],[windQ,.14],[precipQ,.12],[darkQ,.12]
+    ]);
+
+    let deep = deepBase * clearFraction;
+    let planetary = planetaryBase * clearFraction;
     if (sm.sunAlt > -6) { deep *= darkQ/100; planetary *= Math.max(.25,darkQ/100); }
 
     result.push({
