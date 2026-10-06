@@ -359,23 +359,24 @@ function buildRows() {
   const astro = buildAstroIndex();
   const mbFreeData = state.meteoblue?.free?.ok ? state.meteoblue.free.data : null;
   const mbSeeingData = state.meteoblue?.seeing?.ok ? state.meteoblue.seeing.data : null;
-  const mb3 = mbFreeData?.data_3h || null;
+  const mbCloudData = mbFreeData?.data_1h || mbFreeData?.data_3h || null;
+  const mbAirData = mbFreeData?.data_3h || mbFreeData?.data_1h || null;
   const mb1 = mbSeeingData?.data_1h || null;
-  const mb3Index = meteoblueIndex(mb3);
+  const mbCloudIndex = meteoblueIndex(mbCloudData);
+  const mbAirIndex = meteoblueIndex(mbAirData);
   const mb1Index = meteoblueIndex(mb1);
-  const mbCloudTotalSeries = pickSeries(mb3, ['cloudcover','totalcloudcover','cloudcovertotal'], k => k.includes('cloud') && !k.includes('low') && !k.includes('mid') && !k.includes('medium') && !k.includes('high'));
-  const mbCloudLowSeries = pickSeries(mb3, ['lowclouds','cloudcoverlow','lowcloudcover'], k => k.includes('cloud') && k.includes('low'));
-  const mbCloudMidSeries = pickSeries(mb3, ['midclouds','mediumclouds','cloudcovermid','cloudcovermedium','midcloudcover'], k => k.includes('cloud') && (k.includes('mid') || k.includes('medium')));
-  const mbCloudHighSeries = pickSeries(mb3, ['highclouds','cloudcoverhigh','highcloudcover'], k => k.includes('cloud') && k.includes('high'));
-  const mbCapeSeries = pickSeries(mb3, ['cape'], k => k === 'cape' || k.includes('cape'));
-  const mbFogSeries = pickSeries(mb3, ['fog_probability','fogprobability'], k => k.includes('fog') && k.includes('prob'));
-  const mbVisibilitySeries = pickSeries(mb3, ['visibility'], k => k === 'visibility');
+  const mbCloudTotalSeries = pickSeries(mbCloudData, ['cloudcover','totalcloudcover','cloudcovertotal'], k => k.includes('cloud') && !k.includes('low') && !k.includes('mid') && !k.includes('medium') && !k.includes('high'));
+  const mbCloudLowSeries = pickSeries(mbCloudData, ['lowclouds','cloudcoverlow','lowcloudcover'], k => k.includes('cloud') && k.includes('low'));
+  const mbCloudMidSeries = pickSeries(mbCloudData, ['midclouds','mediumclouds','cloudcovermid','cloudcovermedium','midcloudcover'], k => k.includes('cloud') && (k.includes('mid') || k.includes('medium')));
+  const mbCloudHighSeries = pickSeries(mbCloudData, ['highclouds','cloudcoverhigh','highcloudcover'], k => k.includes('cloud') && k.includes('high'));
+  const mbFogSeries = pickSeries(mbCloudData, ['fog_probability','fogprobability'], k => k.includes('fog') && k.includes('prob'));
+  const mbVisibilitySeries = pickSeries(mbCloudData, ['visibility'], k => k === 'visibility');
+  const mbCapeSeries = pickSeries(mbAirData, ['cape'], k => k === 'cape' || k.includes('cape'));
   const offset = state.weather.utc_offset_seconds || 0;
   const result = [];
 
   for (let i=0; i<wh.time.length; i++) {
     const localTime = wh.time[i];
-    if (Number(localTime.slice(11,13)) % 3 !== 0) continue;
     const u = upper.get(localTime) || {};
     const dateUtc = toUtcFromOpenMeteo(localTime, offset);
     const sm = sunMoon(dateUtc);
@@ -390,15 +391,16 @@ function buildRows() {
     const seeingIndex = a && Number(a.seeing) !== -9999 ? Number(a.seeing) : null;
     const transIndex = a && Number(a.transparency) !== -9999 ? Number(a.transparency) : null;
 
-    const mb3i = nearestIndex(mb3Index, dateUtc, 2);
-    const mb1i = nearestIndex(mb1Index, dateUtc, 1);
-    const mbCloud = mb3i === undefined ? NaN : seriesValue(mbCloudTotalSeries, mb3i);
-    const mbLow = mb3i === undefined ? NaN : seriesValue(mbCloudLowSeries, mb3i);
-    const mbMid = mb3i === undefined ? NaN : seriesValue(mbCloudMidSeries, mb3i);
-    const mbHigh = mb3i === undefined ? NaN : seriesValue(mbCloudHighSeries, mb3i);
-    const mbCape = mb3i === undefined ? NaN : seriesValue(mbCapeSeries, mb3i);
-    const mbFog = mb3i === undefined ? NaN : seriesValue(mbFogSeries, mb3i);
-    const mbVisibility = mb3i === undefined ? NaN : seriesValue(mbVisibilitySeries, mb3i);
+    const mbCloudI = nearestIndex(mbCloudIndex, dateUtc, mbFreeData?.data_1h ? 0 : 2);
+    const mbAirI = nearestIndex(mbAirIndex, dateUtc, mbFreeData?.data_3h ? 2 : 0);
+    const mb1i = nearestIndex(mb1Index, dateUtc, 0);
+    const mbCloud = mbCloudI === undefined ? NaN : seriesValue(mbCloudTotalSeries, mbCloudI);
+    const mbLow = mbCloudI === undefined ? NaN : seriesValue(mbCloudLowSeries, mbCloudI);
+    const mbMid = mbCloudI === undefined ? NaN : seriesValue(mbCloudMidSeries, mbCloudI);
+    const mbHigh = mbCloudI === undefined ? NaN : seriesValue(mbCloudHighSeries, mbCloudI);
+    const mbCape = mbAirI === undefined ? NaN : seriesValue(mbCapeSeries, mbAirI);
+    const mbFog = mbCloudI === undefined ? NaN : seriesValue(mbFogSeries, mbCloudI);
+    const mbVisibility = mbCloudI === undefined ? NaN : seriesValue(mbVisibilitySeries, mbCloudI);
     const mbSeeing = mb1i === undefined ? NaN : seriesValue(mb1?.seeing_arcsec, mb1i);
     const mbSeeing1 = mb1i === undefined ? NaN : seriesValue(mb1?.seeing1, mb1i);
     const mbSeeing2 = mb1i === undefined ? NaN : seriesValue(mb1?.seeing2, mb1i);
@@ -452,7 +454,7 @@ function buildRows() {
   return result;
 }
 
-function horizonRows() { return state.rows.slice(0, Math.ceil(state.hours/3)); }
+function horizonRows() { return state.rows.slice(0, state.hours); }
 function visibleRows() {
   const base = horizonRows();
   if (!base.length) return [];
