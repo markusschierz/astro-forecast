@@ -459,7 +459,7 @@ function buildRows() {
 
     // Basisqualität nur aus Faktoren, die einander sinnvoll kompensieren können.
     const deepBase = weighted([
-      [transQ,.38],[dewQ,.20],[windQ,.16],[moonQ,.14],[darkQ,.12]
+      [transQ,.48],[windQ,.20],[moonQ,.17],[darkQ,.15]
     ]);
     const planetaryBase = weighted([
       [seeingQ,.70],[windQ,.16],[darkQ,.14]
@@ -541,6 +541,13 @@ function td(value,cls='',title=''){return `<td class="${cls}"${title?` title="${
 function row(label,cells,title=''){return `<tr><th class="row-label" scope="row"${title?` title="${escapeHtml(title)}"`:''}>${label}</th>${cells.join('')}</tr>`;}
 function fmt(v,d=0,s=''){return Number.isFinite(v)?`${v.toFixed(d)}${s}`:'—';}
 function signedDeg(v){if(!Number.isFinite(v))return '—';const n=Math.round(v);return `${n>=0?'+':''}${n}°`;}
+function dewRiskLabel(q) {
+  if (!Number.isFinite(q)) return '—';
+  if (q >= 75) return 'niedrig';
+  if (q >= 50) return 'mittel';
+  if (q >= 25) return 'hoch';
+  return 'sehr hoch';
+}
 function cellByQuality(text,q,extra='',title=''){return td(text,`${scoreClass(Number.isFinite(q)?q:50)} ${extra}`.trim(),title);}
 function cellByBadPercent(v,text=null){return cellByQuality(text??fmt(v,0,'%'),percentQuality(v));}
 function nightClass(r){if(r.sunAlt<=-18)return'astronomical';if(r.sunAlt<=-6)return'night';return'daylight';}
@@ -594,6 +601,11 @@ function renderNightTable(rows, nightIndex) {
     const text = `${fmt(r.moonIllum*100,0,'%')} · ${signedDeg(r.moonAlt)}`;
     return cellByQuality(text,100-moonPenalty(r.moonAlt,r.moonIllum),'','Beleuchtung · Mondhöhe. Die Farbe bewertet den Einfluss des Mondlichts.');
   }),'Mondbeleuchtung und Mondhöhe. Unter dem Horizont verursacht der Mond keinen Lichtabzug im Deep-Sky-Score.'));
+  html.push(row('Tau-Risiko',rows.map(r=>{
+    const spread = Number.isFinite(r.temp) && Number.isFinite(r.dew) ? r.temp-r.dew : NaN;
+    const text = Number.isFinite(spread) ? `${dewRiskLabel(r.dewQ)} · ${spread.toFixed(1)} K` : dewRiskLabel(r.dewQ);
+    return cellByQuality(text,r.dewQ,'','Betriebsinfo aus Temperatur–Taupunkt-Abstand und relativer Feuchte. Mit Taukappe/Heizung normalerweise kein Qualitätskiller.');
+  }),'Betriebsinfo für Kondensationsgefahr an Optik und Ausrüstung. Tau beeinflusst den Deep-Sky-Score nicht mehr direkt.'));
 
   html.push(detailGroup('Wolken & Transparenz',group('clouds'),rows,'Quellenvergleich und Schichten'));
   html.push(detailRow(group('clouds'),'Wolken-Konsens',rows.map(r=>cellByBadPercent(r.cloudConsensus)), 'Konservativer Konsens aus MeteoSwiss ICON-CH und meteoblue mLM; bei nur einer verfügbaren Quelle wird diese verwendet.'));
