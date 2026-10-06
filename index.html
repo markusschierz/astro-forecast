@@ -58,14 +58,9 @@
         <div class="metric-note" id="bestPlanetNote">—</div>
       </article>
       <article class="metric-card">
-        <div class="metric-label">Niedrigstes Seeing</div>
-        <div class="metric-value" id="bestSeeing">—</div>
-        <div class="metric-note" id="bestSeeingNote">—</div>
-      </article>
-      <article class="metric-card">
-        <div class="metric-label">Niedrigste Bewölkung</div>
-        <div class="metric-value" id="bestCloud">—</div>
-        <div class="metric-note" id="bestCloudNote">—</div>
+        <div class="metric-label">Mond</div>
+        <div class="metric-value" id="moonSummary">—</div>
+        <div class="metric-note" id="moonSummaryNote">—</div>
       </article>
     </section>
 
@@ -73,7 +68,7 @@
       <div class="forecast-head">
         <div>
           <h2>Stündliche Astro-Bedingungen</h2>
-          <p>Raster 3 Stunden. meteoblue seeing_arcsec ist die primäre direkte Seeing-Prognose, sofern der API-Key Zugriff auf seeing-1h hat. 7Timer und ein unabhängiger Atmosphärenindikator dienen als Vergleich und Fallback.</p>
+          <p>Raster 3 Stunden. Angezeigt werden nur die Nachtstunden inklusive des Zeitblocks um Sonnenuntergang und Sonnenaufgang. Standardmäßig siehst du nur Deep Sky, Planetary und Mond; weitere Daten lassen sich gruppenweise aufklappen.</p>
         </div>
         <div class="legend">
           <span><i class="legend-box excellent"></i>sehr gut</span>
@@ -116,7 +111,7 @@
   </dialog>
 
   <footer>
-    <span>Astro Forecast 3</span>
+    <span>Astro Forecast 3.1</span>
     <span>Open-Meteo · MeteoSwiss · meteoblue · 7Timer</span>
   </footer>
 </body>
