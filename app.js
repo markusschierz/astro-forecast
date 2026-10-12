@@ -437,8 +437,9 @@ function buildRows() {
     const precip=numericValue(wh.precipitation?.[i]), pop=numericValue(wh.precipitation_probability?.[i]);
 
     const cloudQ = weighted([[percentQuality(cloudConsensus),.46],[percentQuality(lowConsensus),.20],[percentQuality(midConsensus),.16],[percentQuality(highConsensus),.18]]);
+    // Cloud cover is handled exclusively by skyGate, including in the fallback.
     const transQ = transIndex ? transparencyQuality(transIndex) : weighted([
-      [percentQuality(highConsensus),.45],[scaleQuality(rh,55,98),.20],[scaleQuality(numericValue(u.relative_humidity_700hPa),35,95),.20],
+      [scaleQuality(rh,55,98),.20],[scaleQuality(numericValue(u.relative_humidity_700hPa),35,95),.20],
       [Number.isFinite(mbVisibility) ? clamp((mbVisibility-5000)/(30000-5000)*100,0,100) : NaN,.15]
     ]);
     const dewQ = dewQuality(temp,dew,rh);
@@ -472,16 +473,16 @@ function buildRows() {
 
     // Basisqualität nur aus Faktoren, die einander sinnvoll kompensieren können.
     const deepBase = [transQ,windQ,moonQ,darkQ].every(Number.isFinite) ? weighted([
-      [transQ,.48],[windQ,.20],[moonQ,.17],[darkQ,.15]
+      [transQ,.55],[windQ,.15],[moonQ,.20],[darkQ,.10]
     ]) : NaN;
-    const planetaryBase = [seeingQ,windQ,darkQ].every(Number.isFinite) ? weighted([
-      [seeingQ,.70],[windQ,.16],[darkQ,.14]
+    const planetaryBase = [seeingQ,windQ].every(Number.isFinite) ? weighted([
+      [seeingQ,.80],[windQ,.20]
     ]) : NaN;
 
     const usabilityGate = skyGate === 0 || precipGate === 0 ? 0 : skyGate * precipGate;
     let deep = usabilityGate === 0 ? 0 : deepBase * usabilityGate;
     let planetary = usabilityGate === 0 ? 0 : planetaryBase * usabilityGate;
-    if (sm.sunAlt > -6) { deep *= darkQ/100; planetary *= Math.max(.25,darkQ/100); }
+    if (sm.sunAlt > -6) { deep *= darkQ/100; }
 
     result.push({
       localTime,dateUtc,sunAlt:sm.sunAlt,moonAlt:sm.moonAlt,moonIllum:sm.moonIllum,
