@@ -1,4 +1,4 @@
-const CACHE = 'astro-forecast-v3.8';
+const CACHE = 'astro-forecast-v3.8-missing-data';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
@@ -12,3 +12,4 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
+
