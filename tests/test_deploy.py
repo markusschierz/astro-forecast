@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+import tempfile
 
 spec = importlib.util.spec_from_file_location("deploy_test", Path(__file__).resolve().parents[1] / "scripts/deploy_test.py")
 deploy = importlib.util.module_from_spec(spec)
@@ -10,7 +12,7 @@ class DeploymentTests(unittest.TestCase):
     def env(self, **overrides):
         return {
             "SFTP_HOST": "example.hostpoint.ch", "SFTP_USER": "test_user",
-            "SFTP_PASSWORD": "fixture-password", "SFTP_REMOTE_DIR": "/www/test.astro-foto.ch/astro-forecast",
+            "SFTP_PRIVATE_KEY": "fixture-private-key", "SFTP_REMOTE_DIR": "/www/test.astro-foto.ch/astro-forecast",
             "SFTP_KNOWN_HOSTS": "fixture-host-key", "GITHUB_SHA": "a" * 40,
             **overrides,
         }
@@ -19,7 +21,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(deploy.configuration(self.env())[3], 22)
 
     def test_missing_secrets_fail_before_network_access(self):
-        for key in ("SFTP_HOST", "SFTP_USER", "SFTP_PASSWORD", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS"):
+        for key in ("SFTP_HOST", "SFTP_USER", "SFTP_PRIVATE_KEY", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS"):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 deploy.configuration(self.env(**{key: ""}))
 
@@ -50,6 +52,37 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(len(renames), len(deploy.FILES))
         self.assertLess(max(uploads), min(renames))
         self.assertTrue(lines[-1].endswith('"sw.js"'))
+
+    def test_key_authentication_and_optional_passphrase_without_network(self):
+        for passphrase in ("", "fixture-passphrase"):
+            with self.subTest(encrypted=bool(passphrase)), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                for path in deploy.FILES:
+                    target = root / path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("fixture")
+                def inspect_call(args, **kwargs):
+                    self.assertEqual(args[0], "sftp")
+                    self.assertIn("-oPreferredAuthentications=publickey", args)
+                    self.assertIn("-oPasswordAuthentication=no", args)
+                    self.assertIn("-oKbdInteractiveAuthentication=no", args)
+                    self.assertIn("-oIdentitiesOnly=yes", args)
+                    key = Path(args[args.index("-i") + 1])
+                    self.assertEqual(key.read_text(), "fixture-private-key\n")
+                    self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+                    if passphrase:
+                        self.assertEqual(kwargs["env"]["SSH_ASKPASS_REQUIRE"], "force")
+                        self.assertTrue(Path(kwargs["env"]["SSH_ASKPASS"]).is_file())
+                    else:
+                        self.assertIn("-oBatchMode=yes", args)
+                with patch.object(deploy, "ROOT", root), patch.dict(
+                    deploy.os.environ, self.env(SFTP_KEY_PASSPHRASE=passphrase), clear=True
+                ), patch.object(deploy.subprocess, "run", side_effect=inspect_call) as transfer, patch.object(
+                    deploy, "verify_public_files"
+                ) as verify:
+                    deploy.main()
+                    transfer.assert_called_once()
+                    verify.assert_called_once_with("a" * 40)
 
 if __name__ == "__main__":
     unittest.main()

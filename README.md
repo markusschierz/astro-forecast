@@ -164,12 +164,14 @@ Vor dem ersten Lauf unter **Settings → Environments** das Environment **test**
 | Secret | Wert |
 | --- | --- |
 | SFTP_HOST | SFTP-Server aus dem Hostpoint Control Panel, ohne Protokoll |
-| SFTP_USER | Bestehender SFTP-Benutzer für die Testseite |
-| SFTP_PASSWORD | Passwort dieses SFTP-Benutzers |
+| SFTP_USER | SSH-Benutzername des Hostpoint-Hostingkontos |
+| SFTP_PRIVATE_KEY | Vollständiger privater SSH-Schlüssel, einschließlich BEGIN/END-Zeilen |
 | SFTP_REMOTE_DIR | Absoluter SFTP-Pfad des bestehenden Ordners der Testseite, mit Endung `/astro-forecast` |
 | SFTP_KNOWN_HOSTS | Verifizierter SSH-Host-Key des SFTP-Servers im OpenSSH-known_hosts-Format |
 
-Falls Port 22 nicht zutrifft, zusätzlich die Environment-Variable **SFTP_PORT** setzen. Kein Zugangspasswort in Repository-Dateien oder Chat eintragen.
+Falls Port 22 nicht zutrifft, zusätzlich die Environment-Variable **SFTP_PORT** setzen. Bei einem verschlüsselten privaten Schlüssel zusätzlich das Secret **SFTP_KEY_PASSPHRASE** setzen. Die Passphrase wird nur zum Entschlüsseln des Schlüssels verwendet; eine Serveranmeldung per Passwort ist deaktiviert. Private Schlüssel und Passphrasen nicht in Repository-Dateien oder Chat eintragen.
+
+Der öffentliche Schlüssel muss bei Hostpoint für den SSH-Benutzernamen hinterlegt sein. Der Benutzername bleibt auch bei Schlüsselanmeldung erforderlich. Ein dedizierter Deployment-Schlüssel kann getrennt vom persönlichen Schlüssel verwaltet werden.
 
 Den absoluten Zielpfad aus der bestehenden SFTP-Verbindung übernehmen und prüfen, dass er zu **test.astro-foto.ch** gehört. Der Ordner und sein Unterordner `api` müssen bereits existieren. Der Workflow erstellt keine WordPress-Seite und ändert keine iframe-Einbindung.
 
