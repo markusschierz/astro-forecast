@@ -154,3 +154,33 @@ Fehlende Werte (einschließlich `null`, leerer Strings und `-9999`) werden als u
 GitHub Actions prüft bei Pull Requests und bei Pushes auf `main` zusätzlich die JavaScript-, PHP- und Python-Syntax. Der Workflow führt kein Deployment aus.
 
 Nicht abgedeckt: reale API-Schemata und Erreichbarkeit, astronomische Genauigkeit von SunCalc, PHP-Proxy-Verhalten, Browserlayout, Touch-Scrollen und WordPress-Einbettung. Dafür folgen Adapter-/Integrationstests und Browserprüfungen in separaten Pull Requests.
+
+## Deployment auf test.astro-foto.ch
+
+Der Workflow **Deploy test.astro-foto.ch** wird ausschließlich manuell unter **Actions → Deploy test.astro-foto.ch → Run workflow → main** gestartet. Er deployt den ausgewählten Commit von main nach erfolgreichen Tests. Pushes und Pull Requests lösen kein Deployment aus.
+
+Vor dem ersten Lauf unter **Settings → Environments** das Environment **test** anlegen. Die folgenden Environment-Secrets dort hinterlegen (alternativ Repository-Secrets unter **Settings → Secrets and variables → Actions**):
+
+| Secret | Wert |
+| --- | --- |
+| SFTP_HOST | SFTP-Server aus dem Hostpoint Control Panel, ohne Protokoll |
+| SFTP_USER | Bestehender SFTP-Benutzer für die Testseite |
+| SFTP_PASSWORD | Passwort dieses SFTP-Benutzers |
+| SFTP_REMOTE_DIR | Absoluter SFTP-Pfad des bestehenden Ordners der Testseite, mit Endung `/astro-forecast` |
+| SFTP_KNOWN_HOSTS | Verifizierter SSH-Host-Key des SFTP-Servers im OpenSSH-known_hosts-Format |
+
+Falls Port 22 nicht zutrifft, zusätzlich die Environment-Variable **SFTP_PORT** setzen. Kein Zugangspasswort in Repository-Dateien oder Chat eintragen.
+
+Den absoluten Zielpfad aus der bestehenden SFTP-Verbindung übernehmen und prüfen, dass er zu **test.astro-foto.ch** gehört. Der Ordner und sein Unterordner `api` müssen bereits existieren. Der Workflow erstellt keine WordPress-Seite und ändert keine iframe-Einbindung.
+
+Für **SFTP_KNOWN_HOSTS** die passende Zeile aus einer bereits verifizierten lokalen `~/.ssh/known_hosts` übernehmen. Alternativ `ssh-keyscan -p 22 SFTP_SERVER` ausführen und den Fingerprint über eine vertrauenswürdige Hostpoint-Quelle oder die bereits verifizierte Verbindung vergleichen, bevor die Zeile als Secret gespeichert wird. Bei einem anderen Port muss die Zeile den Host als `[SFTP_SERVER]:PORT` enthalten. Der Workflow akzeptiert keinen unbekannten oder abweichenden Server-Key.
+
+Übertragen werden ausschließlich zehn App-Dateien: HTML, CSS, JavaScript, Manifest, Icons sowie die beiden PHP-Proxys und `api/.htaccess`. **config.local.php, .env, WordPress-Dateien, Tests und Entwicklungsserver werden nicht übertragen oder gelöscht.** Der serverseitige meteoblue-Key bleibt erhalten.
+
+Alle Dateien werden zuerst unter temporären Namen hochgeladen, danach einzeln umbenannt; HTML und Service Worker folgen zuletzt. Dies ist kein transaktionaler Wechsel des gesamten Verzeichnisses. Bei einem Fehler während des Umbenennens kann ein Teilstand entstehen; nach Behebung denselben oder einen korrigierten main-Stand erneut ausführen. Anschließend vergleicht der Workflow die öffentlich erreichbaren Dateien `index.html`, `app.js` und `sw.js` mit dem Commit. Eine fehlgeschlagene HTTP-Prüfung macht den Lauf rot, rollt aber keinen bereits erfolgten Upload zurück.
+
+Lokale Deployment-Tests ohne Zugangsdaten oder Netzwerk:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
