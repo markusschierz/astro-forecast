@@ -1,44 +1,56 @@
-# Astro Forecast 3
+# Astro Forecast
 
-Astrofotografie-Wettervorhersage für `test.astro-foto.ch` mit MeteoSwiss/Open-Meteo, meteoblue und 7Timer.
+Astro Forecast ist ein Projekt zur Planung von Astrofotografie mit Wetter-, Seeing- und Transparenzprognosen. Die aktuelle Oberfläche ist eine Webapp für **astro-foto.ch**. **test.astro-foto.ch** dient als Testumgebung vor der Veröffentlichung auf der Produktionsseite.
 
-## Neu in Version 3
+| Umgebung | Website | App |
+| --- | --- | --- |
+| Produktion | https://astro-foto.ch | https://astro-foto.ch/astro-forecast/ |
+| Test | https://test.astro-foto.ch | https://test.astro-foto.ch/astro-forecast/ |
 
-- meteoblue serverseitig integriert; der API-Key steht nie in `app.js` oder im Browser.
-- Free-Weather-Pakete `clouds-3h` und `air-3h` als zweite unabhängige Forecast-Quelle.
-- Das offizielle meteoblue-Paket `seeing-1h` wird automatisch getestet.
-- Falls `seeing-1h` für den Key freigeschaltet ist, wird `seeing_arcsec` als primäre Seeing-Prognose verwendet.
-- meteoblue Seeing Index 1/2, Jetstream und Bad-Layer-Daten werden zusätzlich angezeigt.
-- 7Timer bleibt als unabhängige Seeing-/Transparenzquelle.
-- Wolken-Konsens aus MeteoSwiss ICON-CH und meteoblue mLM.
+Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden werden. Android-App und CLI sind mögliche spätere Clients; sie sind noch nicht implementiert. Architektur und Entwicklungsregeln stehen in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## API-Key auf dem Webserver
+## Aktueller Stand
 
-### Empfohlen: Server-Umgebungsvariable
+Die sichtbare App-Version ist **3.9**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
 
-Wenn dein Hoster Umgebungsvariablen für PHP/FPM unterstützt, setze:
+- Standortsuche mit Winterthur als Standard; gespeicherter Standort im Browser.
+- Stündliches Raster mit Prognosezeiträumen von 3, 5 und 8 Tagen. Die Quellen können kürzere Horizonte liefern; 8 Tage bedeuten derzeit nicht garantiert 192 kommende Stunden.
+- Nächte untereinander, einschließlich angrenzender Sonnenuntergangs-/Sonnenaufgangsstunden; Details gruppenweise aufklappbar.
+- Getrennte Deep-Sky- und Planetary-Scores, Mondbeleuchtung und vorzeichenbehaftete Mondhöhe.
+- Tau-Risiko als Betriebsinformation unter Mond, ohne direkten Einfluss auf den Score.
+- Mehrere Wetterquellen mit Ersatzquellen und serverseitigem API-Key.
 
-```text
-METEOBLUE_API_KEY=dein_echter_key
-```
+## Datenquellen und Auflösung
 
-Dann ist keine Schlüsseldatei nötig.
+| Quelle | Verwendung |
+| --- | --- |
+| MeteoSwiss ICON-CH via Open-Meteo | Wetter, Bewölkung, Wind, Feuchte, Taupunkt, Niederschlag |
+| Open-Meteo Best Match | Wetter-Fallback, falls der explizite MeteoSwiss-Abruf scheitert |
+| Open-Meteo Druckniveau-Daten | Atmosphärenindikator aus 850/700/500/300/250/200 hPa |
+| meteoblue Clouds/Air | Unabhängiger Wolken-/Atmosphärenvergleich |
+| meteoblue seeing-1h | Direkte Seeing-Prognose, falls für den serverseitigen Key freigeschaltet |
+| 7Timer ASTRO | Seeing-Klasse und Transparenz, ungefähr drei Tage Horizont |
+| SunCalc 1.9.0 | Sonnenhöhe, Mondhöhe und Mondbeleuchtung |
 
-### Einfach auf Shared Hosting: `config.local.php`
+meteoblue bevorzugt **clouds-1h + air-1h**, danach **clouds-1h + air-3h**, zuletzt **clouds-3h + air-3h**. Das Stundenraster der Anzeige bedeutet nicht, dass alle Quellen native Stundenwerte liefern: 3h-Werte werden zeitlich zugeordnet.
 
-Im Ordner:
+Seeing-Priorität: meteoblue seeing_arcsec → 7Timer-Klasse → Atmosphärenindikator. Der eigene Indikator ist eine Qualitätsskala und keine direkte Seeing-Prognose in Bogensekunden. Die Anzeige der tatsächlichen Wetter-Fallbackquelle ist noch nicht überall korrekt.
 
-```text
-astro-forecast/api/
-```
+## Score-Logik
 
-liegt `config.example.php`. Kopiere sie zu:
+- Deep Sky: Transparenz 48 %, Wind 20 %, Mondlicht 17 %, Dunkelheit 15 %.
+- Planetary: Seeing 70 %, Wind 16 %, Dunkelheit 14 %.
+- Wolken und optionaler Nebel wirken als gemeinsames Sichtbarkeits-Gate; der schlechtere Wert wird verwendet.
+- Wolken-Konsens bei zwei Quellen: 65 % des höheren und 35 % des niedrigeren Wertes; bei einer Quelle gilt deren Wert. 100 % versus 0 % ergeben somit 65 % Konsens, nicht vollständige Blockierung.
+- Niederschlagswahrscheinlichkeit wirkt quadratisch; modellierte Niederschlagsmenge ab 0,05 mm/h setzt beide Scores auf 0.
+- Fehlende Gesamtbewölkung aus beiden Quellen oder fehlende Niederschlagsmenge/-wahrscheinlichkeit ergeben unbekannte Scores, dargestellt als neutraler Strich. Ein bekannter Showstopper bleibt bei 0.
+- Ohne Seeing-Quelle einschließlich Atmosphärenindikator bleibt Planetary unbekannt. Unbekannte Scores werden nicht als beste Stunde ausgewählt.
+- Tau beeinflusst den Score nicht direkt; Luftfeuchte kann weiterhin in den Transparenz-Fallback eingehen.
+- Gefordert sind Mondbeleuchtung und Horizonthöhe. Ein Ziel–Mond-Abstand gehört nicht zum Funktionsumfang.
 
-```text
-astro-forecast/api/config.local.php
-```
+## meteoblue-Key auf dem Webserver
 
-Inhalt:
+Der Key wird ausschließlich serverseitig verarbeitet. Bevorzugt die PHP/FPM-Umgebungsvariable **METEOBLUE_API_KEY** setzen. Alternativ api/config.example.php nach **api/config.local.php** kopieren und dort den Key hinterlegen:
 
 ```php
 <?php
@@ -47,38 +59,21 @@ return [
 ];
 ```
 
-Die enthaltene `.htaccess` sperrt `config.local.php` und `config.example.php` für direkte HTTP-Zugriffe. `config.local.php` wird absichtlich nicht im ZIP mit einem echten Schlüssel ausgeliefert.
+api/.htaccess sperrt diese Konfigurationsdateien für direkte HTTP-Zugriffe; config.local.php ist in .gitignore ausgeschlossen und wird vom Deployment nicht übertragen. Der API-Key gehört niemals in JavaScript, WordPress-Inhalte oder Git.
 
-Wenn Shell-Zugriff vorhanden ist:
-
-```bash
-chmod 600 astro-forecast/api/config.local.php
-```
-
-Den Key niemals in `app.js`, `index.html`, WordPress Custom HTML oder ein öffentliches Git-Repository schreiben.
-
-## API-Test auf test.astro-foto.ch
-
-Nach dem Upload:
+meteoblue wird zuerst auf der Testumgebung geprüft:
 
 ```text
 https://test.astro-foto.ch/astro-forecast/api/meteoblue.php?lat=47.4988&lon=8.7241&asl=439
 ```
 
-Erwartete Struktur:
+Die Antwort enthält free.ok für Clouds/Air und seeing.ok für das optionale Seeing-Paket. Ein nicht freigeschaltetes Seeing-Paket ist kein Ausfall der gesamten App. Beide Umgebungen benötigen ihre eigene erhaltene serverseitige Konfiguration.
 
-```json
-{
-  "error": false,
-  "source": "meteoblue",
-  "free": { "ok": true, "status": 200, "data": {} },
-  "seeing": { "ok": true, "status": 200, "data": {} }
-}
-```
-
-Bei einem normalen Free-Key kann `free.ok` wahr sein und `seeing.ok` falsch/403. Das ist korrekt: `seeing-1h` gehört nicht zum normalen Free-Paket. Wenn dein Key zusätzlichen Seeing-Zugriff hat, wird `seeing.ok` wahr und die App verwendet `seeing_arcsec` automatisch.
+Server-Caches: meteoblue 30 Minuten, 7Timer 15 Minuten. 7Timer kann bei einem Quellenfehler ältere Cache-Daten zurückgeben; deren Alter wird derzeit nicht in der Oberfläche ausgewiesen.
 
 ## Lokal starten
+
+Voraussetzung: Python 3.
 
 ```bash
 cd astro-forecast
@@ -86,35 +81,29 @@ export METEOBLUE_API_KEY='DEIN_ECHTER_KEY'
 python3 dev_server.py 8765
 ```
 
-Dann:
+Öffnen: http://127.0.0.1:8765/
 
-```text
-http://127.0.0.1:8765/
+Der Python-Entwicklungsserver stellt lokale Nachbildungen der PHP-Proxys bereit. Cache-, Validierungs- und Fehlerverhalten sind noch nicht vollständig identisch zum Hostingbetrieb.
+
+## Automatisierte Prüfungen
+
+Voraussetzung: Node.js 22 oder neuer und Python 3. Keine npm-Pakete oder API-Schlüssel nötig.
+
+```bash
+npm test
+npm run check:js
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Der lokale Entwicklungsserver stellt sowohl `/api/7timer.php` als auch `/api/meteoblue.php` bereit.
+30 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 13 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
 
-## Datenquellen
+Zwei TODO-Einträge sind noch keine ausführbaren Tests: Zeitumstellung und überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
 
-- **MeteoSwiss ICON-CH via Open-Meteo**: lokale Wetterdaten, Wolken tief/mittel/hoch, Wind, Feuchte, Taupunkt, Niederschlag.
-- **Open-Meteo Druckniveau-Daten**: 850/700/500/300/250/200 hPa für Höhenwind und Turbulenzdiagnostik.
-- **meteoblue mLM**: `clouds-3h` und `air-3h` als unabhängige Vergleichsquelle.
-- **meteoblue seeing-1h**: `seeing_arcsec`, Seeing Index 1/2, Jetstream, Bad Layer, sofern für den Key freigeschaltet.
-- **7Timer ASTRO**: Seeing-Klasse und Transparenz.
-- **SunCalc**: Sonne, Mond, Dunkelheit.
-
-## Seeing-Priorität
-
-1. meteoblue `seeing_arcsec`, wenn verfügbar.
-2. 7Timer Seeing-Klasse als zweite direkte Forecast-Quelle.
-3. Eigener Atmosphären-/Turbulenzindikator nur als diagnostischer Fallback, niemals als erfundene Arcsec-Zahl.
-
-## Caching
-
-- meteoblue: 30 Minuten serverseitig, um Credits bei Reloads zu sparen.
-- 7Timer: 15 Minuten serverseitig.
+GitHub Actions prüft bei Pull Requests und Pushes auf main zusätzlich JavaScript-, PHP- und Python-Syntax sowie die Regressionstests. Der Check **baseline** ist für main verpflichtend. Diese CI führt kein Deployment aus.
 
 ## WordPress-Einbindung
+
+Auf der jeweiligen Website:
 
 ```html
 <div class="astro-forecast-frame">
@@ -136,24 +125,7 @@ Der lokale Entwicklungsserver stellt sowohl `/api/7timer.php` als auch `/api/met
 }
 ```
 
-## Automatisierte Prüfungen
-
-Voraussetzung: Node.js 22 oder neuer. Keine npm-Pakete oder API-Schlüssel nötig.
-
-```bash
-npm test
-npm run check:js
-```
-
-Die Regressionstests führen den unveränderten `app.js` in einem isolierten Node-VM-Kontext aus. Kontrollierte Wetter-Fixtures, eine feste Uhrzeit und ein SunCalc-Testdouble machen die Prüfungen unabhängig von Netzwerk und aktuellen Prognosen. Abgedeckt sind Score-Gates, Tau, Mondbeleuchtung/-höhe, Seeing-Priorität, Zeitfilter, Nachtgruppierung, 3h-Zuordnung und die kompakte Tabellenausgabe.
-
-Zwei `test.todo`-Einträge dokumentieren Folgearbeiten: Zeitumstellung und überholte Refresh-Antworten. Sie sind noch keine ausführbaren Fehlerprüfungen und zählen nicht als bestandene Regressionstests.
-
-Fehlende Werte (einschließlich `null`, leerer Strings und `-9999`) werden als unbekannt behandelt. Fehlen Gesamtbewölkung aus beiden Quellen, Niederschlagsmenge oder Niederschlagswahrscheinlichkeit, werden die Astro-Scores als neutraler Strich angezeigt. Ein bekannter Showstopper bleibt bei 0. Das optionale meteoblue-Nebelpaket ist keine Voraussetzung für die Bewertung. Fehlt jede Seeing-Quelle einschließlich Atmosphärenindikator, bleibt Planetary unbekannt. Unbekannte Scores werden nicht als beste Stunde ausgewählt.
-
-GitHub Actions prüft bei Pull Requests und bei Pushes auf `main` zusätzlich die JavaScript-, PHP- und Python-Syntax. Der Workflow führt kein Deployment aus.
-
-Nicht abgedeckt: reale API-Schemata und Erreichbarkeit, astronomische Genauigkeit von SunCalc, PHP-Proxy-Verhalten, Browserlayout, Touch-Scrollen und WordPress-Einbettung. Dafür folgen Adapter-/Integrationstests und Browserprüfungen in separaten Pull Requests.
+Die feste iframe-Höhe ist eine bestehende Einbindungslösung; automatische Höhenanpassung ist noch offen.
 
 ## Deployment: Test und Produktion
 
