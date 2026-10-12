@@ -3,6 +3,9 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 import tempfile
+import os
+import subprocess
+import shlex
 
 spec = importlib.util.spec_from_file_location("deploy_test", Path(__file__).resolve().parents[1] / "scripts/deploy_test.py")
 deploy = importlib.util.module_from_spec(spec)
@@ -63,6 +66,8 @@ class DeploymentTests(unittest.TestCase):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text("fixture")
                 def inspect_call(args, **kwargs):
+                    if args[0] == "ssh-keygen":
+                        return subprocess.CompletedProcess(args, 0)
                     self.assertEqual(args[0], "sftp")
                     self.assertIn("-oPreferredAuthentications=publickey", args)
                     self.assertIn("-oPasswordAuthentication=no", args)
@@ -82,9 +87,42 @@ class DeploymentTests(unittest.TestCase):
                     deploy, "verify_public_files"
                 ) as verify:
                     deploy.main()
-                    transfer.assert_called_once()
+                    self.assertEqual(transfer.call_count, 2)
                     verify.assert_called_once_with("a" * 40, "https://test.astro-foto.ch/astro-forecast")
 
+
+    def test_real_openssh_batch_mode_allows_passphrase(self):
+        # Capture SSH's effective config through real sftp; no connection is made.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / "config"
+            shim = root / "ssh"
+            shim.write_text('#!/bin/sh\nexec ssh -G "$@" > ' + shlex.quote(str(config)) + '\n')
+            shim.chmod(0o700)
+            batch = root / "batch"
+            batch.write_text("quit\n")
+            for encrypted in (True, False):
+                command = deploy.sftp_command(batch, root / "key", 22, root / "known_hosts", "test", "example.invalid", encrypted)
+                subprocess.run(command[:1] + ["-S", str(shim)] + command[1:], capture_output=True, timeout=10)
+                self.assertIn("batchmode " + ("no" if encrypted else "yes") + "\n", config.read_text())
+
+    def test_real_encrypted_key_preflight(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            key = root / "key"
+            phrase = "fixture passphrase $ with spaces"
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", phrase, "-f", str(key)], check=True)
+            askpass = root / "askpass"
+            askpass.write_text("#!/bin/sh\nprintf '%s\\n' \"$SFTP_KEY_PASSPHRASE\"\n")
+            askpass.chmod(0o700)
+            env = {**os.environ, "SSH_ASKPASS": str(askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": "test"}
+            deploy.validate_private_key(key, {**env, "SFTP_KEY_PASSPHRASE": phrase})
+            for wrong in ("wrong", ""):
+                with self.assertRaisesRegex(ValueError, "Cannot unlock"):
+                    deploy.validate_private_key(key, {**env, "SFTP_KEY_PASSPHRASE": wrong})
+            key.write_text("invalid private key\n")
+            with self.assertRaisesRegex(ValueError, "Cannot unlock"):
+                deploy.validate_private_key(key, env)
 
     def test_website_and_app_paths_are_combined_once(self):
         for base, expected in (
