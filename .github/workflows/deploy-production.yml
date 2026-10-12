@@ -1,0 +1,64 @@
+name: Deploy production
+on:
+  workflow_dispatch:
+    inputs:
+      test_run_id:
+        description: ID of the successful test deployment after visual review
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: deploy-production-astro-forecast
+  cancel-in-progress: false
+jobs:
+  resolve:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve tested commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_RUN_ID: ${{ inputs.test_run_id }}
+        run: |
+          [[ "$TEST_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid test run ID"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID" > "$RUNNER_TEMP/test-run.json"
+          tested_sha=$(python3 scripts/resolve_test_run.py "$RUNNER_TEMP/test-run.json" "$GITHUB_REPOSITORY")
+          echo "sha=$tested_sha" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate tested source
+        run: |
+          npm run check:js
+          npm test
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          php -l api/7timer.php
+          php -l api/meteoblue.php
+      - name: Deploy tested commit and verify public files
+        env:
+          DEPLOY_SHA: ${{ needs.resolve.outputs.sha }}
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+          SFTP_KEY_PASSPHRASE: ${{ secrets.SFTP_KEY_PASSPHRASE }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+          SFTP_REMOTE_DIR: ${{ vars.SFTP_REMOTE_DIR }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          APP_PATH: ${{ vars.APP_PATH }}
+          SFTP_PORT: ${{ vars.SFTP_PORT }}
+        run: python3 scripts/deploy_test.py
