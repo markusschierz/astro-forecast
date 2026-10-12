@@ -147,7 +147,9 @@ npm run check:js
 
 Die Regressionstests führen den unveränderten `app.js` in einem isolierten Node-VM-Kontext aus. Kontrollierte Wetter-Fixtures, eine feste Uhrzeit und ein SunCalc-Testdouble machen die Prüfungen unabhängig von Netzwerk und aktuellen Prognosen. Abgedeckt sind Score-Gates, Tau, Mondbeleuchtung/-höhe, Seeing-Priorität, Zeitfilter, Nachtgruppierung, 3h-Zuordnung und die kompakte Tabellenausgabe.
 
-Drei `test.todo`-Einträge dokumentieren Folgearbeiten: fehlende Wetterwerte, Zeitumstellung und überholte Refresh-Antworten. Sie sind noch keine ausführbaren Fehlerprüfungen und zählen nicht als bestandene Regressionstests.
+Zwei `test.todo`-Einträge dokumentieren Folgearbeiten: Zeitumstellung und überholte Refresh-Antworten. Sie sind noch keine ausführbaren Fehlerprüfungen und zählen nicht als bestandene Regressionstests.
+
+Fehlende Werte (einschließlich `null`, leerer Strings und `-9999`) werden als unbekannt behandelt. Fehlen Gesamtbewölkung aus beiden Quellen, Niederschlagsmenge oder Niederschlagswahrscheinlichkeit, werden die Astro-Scores als neutraler Strich angezeigt. Ein bekannter Showstopper bleibt bei 0. Das optionale meteoblue-Nebelpaket ist keine Voraussetzung für die Bewertung. Fehlt jede Seeing-Quelle einschließlich Atmosphärenindikator, bleibt Planetary unbekannt. Unbekannte Scores werden nicht als beste Stunde ausgewählt.
 
 GitHub Actions prüft bei Pull Requests und bei Pushes auf `main` zusätzlich die JavaScript-, PHP- und Python-Syntax. Der Workflow führt kein Deployment aus.
 

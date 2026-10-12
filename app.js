@@ -18,7 +18,13 @@ const state = {
 const $ = (sel) => document.querySelector(sel);
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 const lerp = (a, b, t) => a + (b - a) * t;
-const finite = (v) => Number.isFinite(Number(v));
+function numericValue(v) {
+  if (typeof v !== 'number' && typeof v !== 'string') return NaN;
+  if (typeof v === 'string' && v.trim() === '') return NaN;
+  const n = Number(v);
+  return Number.isFinite(n) && n !== -9999 ? n : NaN;
+}
+const finite = (v) => Number.isFinite(numericValue(v));
 
 function loadLocation() {
   try { const raw = localStorage.getItem('astroForecastLocation'); return raw ? JSON.parse(raw) : null; }
@@ -40,16 +46,16 @@ function scoreClass(value) {
   if (value >= 30) return 'c-poor';
   return 'c-bad';
 }
-function percentQuality(v) { return clamp(100 - Number(v || 0), 0, 100); }
+function percentQuality(v) { return clamp(100 - numericValue(v), 0, 100); }
 function scaleQuality(value, good, bad) {
-  if (!Number.isFinite(value)) return 50;
+  if (!Number.isFinite(value)) return NaN;
   if (bad === good) return 50;
   return clamp(100 * (1 - (value - good) / (bad - good)), 0, 100);
 }
 function weighted(values) {
   let sum = 0, weight = 0;
   for (const [v, w] of values) if (Number.isFinite(v)) { sum += v * w; weight += w; }
-  return weight ? sum / weight : 0;
+  return weight ? sum / weight : NaN;
 }
 
 const SEEING = {
@@ -72,6 +78,7 @@ function transparencyQuality(index) {
   return clamp(100 - (index - 1) * (100 / 7), 0, 100);
 }
 function dewQuality(temp, dew, rh) {
+  if (![temp, dew, rh].every(Number.isFinite)) return NaN;
   const spread = temp - dew;
   let q = 100 - scaleQuality(spread, 0.5, 7.0);
   if (rh >= 95) q = Math.min(q, 15);
@@ -80,10 +87,13 @@ function dewQuality(temp, dew, rh) {
   return clamp(q, 0, 100);
 }
 function moonPenalty(moonAltDeg, illumination) {
-  if (!Number.isFinite(moonAltDeg) || moonAltDeg <= 0) return 0;
+  if (!Number.isFinite(moonAltDeg)) return NaN;
+  if (moonAltDeg <= 0) return 0;
+  if (!Number.isFinite(illumination)) return NaN;
   return 100 * illumination * clamp(Math.sin(moonAltDeg * Math.PI / 180), 0, 1);
 }
 function darknessQuality(sunAlt) {
+  if (!Number.isFinite(sunAlt)) return NaN;
   if (sunAlt <= -18) return 100;
   if (sunAlt <= -12) return lerp(75, 100, (-sunAlt - 12) / 6);
   if (sunAlt <= -6) return lerp(35, 75, (-sunAlt - 6) / 6);
@@ -148,7 +158,7 @@ function pickSeries(section, candidates = [], matcher = null) {
 }
 function seriesValue(series, i) {
   const v = series?.[i];
-  return Number.isFinite(Number(v)) ? Number(v) : NaN;
+  return numericValue(v);
 }
 function meteoblueIndex(section) {
   const map = new Map();
@@ -171,7 +181,7 @@ function nearestIndex(map, dateUtc, maxHours = 0) {
   return undefined;
 }
 function conservativeCloud(a, b) {
-  const aa = Number(a), bb = Number(b);
+  const aa = numericValue(a), bb = numericValue(b);
   if (Number.isFinite(aa) && Number.isFinite(bb)) return 0.65 * Math.max(aa, bb) + 0.35 * Math.min(aa, bb);
   if (Number.isFinite(aa)) return aa;
   if (Number.isFinite(bb)) return bb;
@@ -300,12 +310,12 @@ function atmosphereDiagnostics(u, surface) {
   const levels = [850,700,500,300,250,200];
   const pts = [];
   for (const p of levels) {
-    const z = Number(u[`geopotential_height_${p}hPa`]);
-    const t = Number(u[`temperature_${p}hPa`]);
-    const ws = Number(u[`wind_speed_${p}hPa`]);
-    const wd = Number(u[`wind_direction_${p}hPa`]);
-    const vv = Math.abs(Number(u[`vertical_velocity_${p}hPa`]));
-    const rh = Number(u[`relative_humidity_${p}hPa`]);
+    const z = numericValue(u[`geopotential_height_${p}hPa`]);
+    const t = numericValue(u[`temperature_${p}hPa`]);
+    const ws = numericValue(u[`wind_speed_${p}hPa`]);
+    const wd = numericValue(u[`wind_direction_${p}hPa`]);
+    const vv = Math.abs(numericValue(u[`vertical_velocity_${p}hPa`]));
+    const rh = numericValue(u[`relative_humidity_${p}hPa`]);
     const vec = windVector(ws, wd);
     if ([z,t,ws,wd].every(Number.isFinite) && vec) pts.push({p,z,t,ws,wd,vv,rh,theta:thetaK(t,p),...vec});
   }
@@ -335,8 +345,8 @@ function atmosphereDiagnostics(u, surface) {
   const shearQ = scaleQuality(maxShear, 2.5, 18);
   const jetQ = scaleQuality(jet, 8, 40);
   const vvQ = scaleQuality(maxVV, 0.02, 0.8);
-  const capeQ = scaleQuality(Number(surface.cape), 20, 800);
-  const sfcWindMs = Number(surface.wind_speed_10m) / 3.6;
+  const capeQ = scaleQuality(numericValue(surface.cape), 20, 800);
+  const sfcWindMs = numericValue(surface.wind_speed_10m) / 3.6;
   const sfcQ = scaleQuality(sfcWindMs, 1, 10);
   const quality = weighted([[riQ,.34],[shearQ,.23],[jetQ,.21],[vvQ,.10],[capeQ,.07],[sfcQ,.05]]);
   return {quality:Math.round(clamp(quality,0,100)), minRi, badLayer:worst, jet, maxShear, maxVV, riQ, shearQ, jetQ};
@@ -389,8 +399,8 @@ function buildRows() {
         if (c) { a=c; break; }
       }
     }
-    const seeingIndex = a && Number(a.seeing) !== -9999 ? Number(a.seeing) : null;
-    const transIndex = a && Number(a.transparency) !== -9999 ? Number(a.transparency) : null;
+    const seeingIndex = seeingInfo(numericValue(a?.seeing)) ? numericValue(a.seeing) : null;
+    const transIndex = Number.isFinite(transparencyQuality(numericValue(a?.transparency))) ? numericValue(a.transparency) : null;
 
     const mbCloudI = nearestIndex(mbCloudIndex, dateUtc, mbPackages.includes('clouds-1h') ? 0 : 2);
     const mbAirI = nearestIndex(mbAirIndex, dateUtc, mbPackages.includes('air-1h') ? 0 : 2);
@@ -402,7 +412,8 @@ function buildRows() {
     const mbCape = mbAirI === undefined ? NaN : seriesValue(mbCapeSeries, mbAirI);
     const mbFog = mbCloudI === undefined ? NaN : seriesValue(mbFogSeries, mbCloudI);
     const mbVisibility = mbCloudI === undefined ? NaN : seriesValue(mbVisibilitySeries, mbCloudI);
-    const mbSeeing = mb1i === undefined ? NaN : seriesValue(mb1?.seeing_arcsec, mb1i);
+    const rawMbSeeing = mb1i === undefined ? NaN : seriesValue(mb1?.seeing_arcsec, mb1i);
+    const mbSeeing = rawMbSeeing > 0 ? rawMbSeeing : NaN;
     const mbSeeing1 = mb1i === undefined ? NaN : seriesValue(mb1?.seeing1, mb1i);
     const mbSeeing2 = mb1i === undefined ? NaN : seriesValue(mb1?.seeing2, mb1i);
     const mbJet = mb1i === undefined ? NaN : seriesValue(mb1?.jetstream, mb1i);
@@ -411,23 +422,23 @@ function buildRows() {
     const mbBadGradient = mb1i === undefined ? NaN : seriesValue(mb1?.badlayer_gradient, mb1i);
 
     const surface = {
-      cape:Number(wh.cape?.[i]), wind_speed_10m:Number(wh.wind_speed_10m?.[i]), wind_gusts_10m:Number(wh.wind_gusts_10m?.[i])
+      cape:numericValue(wh.cape?.[i]), wind_speed_10m:numericValue(wh.wind_speed_10m?.[i]), wind_gusts_10m:numericValue(wh.wind_gusts_10m?.[i])
     };
     const atm = atmosphereDiagnostics(u, surface);
     const confidence = seeingAgreement(mbSeeing, seeingIndex, atm.quality);
 
-    const cloud = Number(wh.cloud_cover?.[i]), low=Number(wh.cloud_cover_low?.[i]), mid=Number(wh.cloud_cover_mid?.[i]), high=Number(wh.cloud_cover_high?.[i]);
+    const cloud = numericValue(wh.cloud_cover?.[i]), low=numericValue(wh.cloud_cover_low?.[i]), mid=numericValue(wh.cloud_cover_mid?.[i]), high=numericValue(wh.cloud_cover_high?.[i]);
     const cloudConsensus = conservativeCloud(cloud, mbCloud);
     const lowConsensus = conservativeCloud(low, mbLow);
     const midConsensus = conservativeCloud(mid, mbMid);
     const highConsensus = conservativeCloud(high, mbHigh);
-    const temp=Number(wh.temperature_2m?.[i]), dew=Number(wh.dew_point_2m?.[i]), rh=Number(wh.relative_humidity_2m?.[i]);
-    const wind=Number(wh.wind_speed_10m?.[i]), gust=Number(wh.wind_gusts_10m?.[i]);
-    const precip=Number(wh.precipitation?.[i]), pop=Number(wh.precipitation_probability?.[i]);
+    const temp=numericValue(wh.temperature_2m?.[i]), dew=numericValue(wh.dew_point_2m?.[i]), rh=numericValue(wh.relative_humidity_2m?.[i]);
+    const wind=numericValue(wh.wind_speed_10m?.[i]), gust=numericValue(wh.wind_gusts_10m?.[i]);
+    const precip=numericValue(wh.precipitation?.[i]), pop=numericValue(wh.precipitation_probability?.[i]);
 
     const cloudQ = weighted([[percentQuality(cloudConsensus),.46],[percentQuality(lowConsensus),.20],[percentQuality(midConsensus),.16],[percentQuality(highConsensus),.18]]);
     const transQ = transIndex ? transparencyQuality(transIndex) : weighted([
-      [percentQuality(highConsensus),.45],[scaleQuality(rh,55,98),.20],[scaleQuality(Number(u.relative_humidity_700hPa),35,95),.20],
+      [percentQuality(highConsensus),.45],[scaleQuality(rh,55,98),.20],[scaleQuality(numericValue(u.relative_humidity_700hPa),35,95),.20],
       [Number.isFinite(mbVisibility) ? clamp((mbVisibility-5000)/(30000-5000)*100,0,100) : NaN,.15]
     ]);
     const dewQ = dewQuality(temp,dew,rh);
@@ -444,36 +455,38 @@ function buildRows() {
       Number.isFinite(cloudConsensus) ? cloudConsensus : 0,
       Number.isFinite(mbFog) ? mbFog : 0
     );
-    const skyGate = clamp((100 - skyObstruction) / 100, 0, 1);
+    // Fog is optional; total cloud cover is required unless fog already blocks use.
+    const skyGate = skyObstruction >= 100 ? 0 : Number.isFinite(cloudConsensus)
+      ? clamp((100 - skyObstruction) / 100, 0, 1) : NaN;
 
     // Niederschlag ist für offene Astro-Ausrüstung ein eigener Killer:
     // Die Wahrscheinlichkeit wirkt bewusst überproportional stark.
     // Modellierter Niederschlag ab 0.05 mm/h setzt den Gate auf 0.
     const popGate = Number.isFinite(pop)
       ? Math.pow(clamp(1 - pop / 100, 0, 1), 2)
-      : 1;
+      : NaN;
     const amountGate = Number.isFinite(precip)
       ? clamp(1 - precip / 0.05, 0, 1)
-      : 1;
-    const precipGate = Math.min(popGate, amountGate);
+      : NaN;
+    const precipGate = popGate === 0 || amountGate === 0 ? 0 : Math.min(popGate, amountGate);
 
     // Basisqualität nur aus Faktoren, die einander sinnvoll kompensieren können.
-    const deepBase = weighted([
+    const deepBase = [transQ,windQ,moonQ,darkQ].every(Number.isFinite) ? weighted([
       [transQ,.48],[windQ,.20],[moonQ,.17],[darkQ,.15]
-    ]);
-    const planetaryBase = weighted([
+    ]) : NaN;
+    const planetaryBase = [seeingQ,windQ,darkQ].every(Number.isFinite) ? weighted([
       [seeingQ,.70],[windQ,.16],[darkQ,.14]
-    ]);
+    ]) : NaN;
 
-    const usabilityGate = skyGate * precipGate;
-    let deep = deepBase * usabilityGate;
-    let planetary = planetaryBase * usabilityGate;
+    const usabilityGate = skyGate === 0 || precipGate === 0 ? 0 : skyGate * precipGate;
+    let deep = usabilityGate === 0 ? 0 : deepBase * usabilityGate;
+    let planetary = usabilityGate === 0 ? 0 : planetaryBase * usabilityGate;
     if (sm.sunAlt > -6) { deep *= darkQ/100; planetary *= Math.max(.25,darkQ/100); }
 
     result.push({
       localTime,dateUtc,sunAlt:sm.sunAlt,moonAlt:sm.moonAlt,moonIllum:sm.moonIllum,
       cloud,low,mid,high,mbCloud,mbLow,mbMid,mbHigh,cloudConsensus,lowConsensus,midConsensus,highConsensus,mbCape,mbFog,mbVisibility,
-      temp,dew,rh,wind,gust,precip,pop,cloudBase:Number(wh.cloud_base?.[i]),cape:Number(wh.cape?.[i]),
+      temp,dew,rh,wind,gust,precip,pop,cloudBase:numericValue(wh.cloud_base?.[i]),cape:numericValue(wh.cape?.[i]),
       seeingIndex,transIndex,mbSeeing,mbSeeing1,mbSeeing2,mbJet,mbBadBottom,mbBadTop,mbBadGradient,
       atmQuality:atm.quality,seeingConfidence:confidence,minRi:atm.minRi,badLayer:atm.badLayer,
       jetMs:atm.jet,maxShear:atm.maxShear,maxVV:atm.maxVV,
@@ -514,7 +527,7 @@ function renderLocation() {
   $('#locationMeta').textContent=[...new Set(parts),elev].filter(Boolean).join(' · ');
   $('#locationInput').value=state.location.name;
 }
-function bestBy(rows, selector, filter=()=>true) { return rows.filter(filter).reduce((b,r)=>!b||selector(r)>selector(b)?r:b,null); }
+function bestBy(rows, selector, filter=()=>true) { return rows.filter(r=>filter(r)&&Number.isFinite(selector(r))).reduce((b,r)=>!b||selector(r)>selector(b)?r:b,null); }
 function dateLabel(r) { return `${formatLocal(r.dateUtc,{weekday:'short'})}, ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})} ${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}`; }
 
 function renderSummary() {
@@ -548,7 +561,7 @@ function dewRiskLabel(q) {
   if (q >= 25) return 'hoch';
   return 'sehr hoch';
 }
-function cellByQuality(text,q,extra='',title=''){return td(text,`${scoreClass(Number.isFinite(q)?q:50)} ${extra}`.trim(),title);}
+function cellByQuality(text,q,extra='',title=''){return td(text,`${Number.isFinite(q)?scoreClass(q):''} ${extra}`.trim(),title);}
 function cellByBadPercent(v,text=null){return cellByQuality(text??fmt(v,0,'%'),percentQuality(v));}
 function nightClass(r){if(r.sunAlt<=-18)return'astronomical';if(r.sunAlt<=-6)return'night';return'daylight';}
 
@@ -595,8 +608,8 @@ function renderNightTable(rows, nightIndex) {
   const head=rows.map(r=>`<th class="date-cell ${nightClass(r)}"><div>${formatLocal(r.dateUtc,{weekday:'short'})} ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})}</div><strong>${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}</strong></th>`);
   const html=[]; html.push(`<thead><tr><th class="row-label">Zeit</th>${head.join('')}</tr></thead><tbody>`);
   // Kompakte Standardansicht.
-  html.push(row('Deep Sky',rows.map(r=>cellByQuality(r.deep,r.deep,'score'))));
-  html.push(row('Planetary',rows.map(r=>cellByQuality(r.planetary,r.planetary,'score'))));
+  html.push(row('Deep Sky',rows.map(r=>cellByQuality(fmt(r.deep),r.deep,'score',Number.isFinite(r.deep)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
+  html.push(row('Planetary',rows.map(r=>cellByQuality(fmt(r.planetary),r.planetary,'score',Number.isFinite(r.planetary)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
   html.push(row('Mond',rows.map(r=>{
     const text = `${fmt(r.moonIllum*100,0,'%')} · ${signedDeg(r.moonAlt)}`;
     return cellByQuality(text,100-moonPenalty(r.moonAlt,r.moonIllum),'','Beleuchtung · Mondhöhe. Die Farbe bewertet den Einfluss des Mondlichts.');
@@ -700,3 +713,4 @@ $('#refreshBtn').addEventListener('click',refresh);
 $('#settingsBtn').addEventListener('click',()=>$('#infoDialog').showModal());
 document.querySelectorAll('.range-btn').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');state.hours=Number(btn.dataset.hours);if(state.rows.length)renderAll();}));
 window.addEventListener('load',()=>{renderLocation();refresh();if('serviceWorker'in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(()=>{});});
+

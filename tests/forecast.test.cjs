@@ -111,6 +111,82 @@ test('night table shows illumination, signed moon altitude and dew beneath moon'
   assert.match(html, /50% · -10°/);
   assert.ok(html.indexOf('Tau-Risiko') > html.indexOf('Mond'));
 });
-test.todo('missing/null weather values must not imply clear dry conditions (follow-up fix)');
+test('missing cloud values suppress scores instead of implying clear sky', () => {
+  for (const value of [null, undefined, '', ' ', false, -9999, NaN]) {
+    const { row } = forecast({ cloud_cover: value });
+    assert.ok(Number.isNaN(row.cloud));
+    assert.ok(Number.isNaN(row.deep)); assert.ok(Number.isNaN(row.planetary));
+  }
+});
+test('a valid alternate cloud source remains usable', () => {
+  const { row } = forecast({ cloud_cover: null }, {}, meteoblue({ cloud: 100 }));
+  assert.equal(row.cloudConsensus, 100);
+  assert.equal(row.deep, 0); assert.equal(row.planetary, 0);
+});
+test('missing precipitation amount or probability suppresses optimistic scores', () => {
+  for (const key of ['precipitation', 'precipitation_probability']) {
+    const { row } = forecast({ [key]: null });
+    assert.ok(Number.isNaN(row.deep)); assert.ok(Number.isNaN(row.planetary));
+  }
+});
+test('known showstoppers retain zero scores despite another missing gate input', () => {
+  for (const overrides of [
+    { cloud_cover: 100, precipitation: null },
+    { cloud_cover: null, precipitation: 0.05 },
+    { precipitation: null, precipitation_probability: 100 }
+  ]) {
+    const { row } = forecast(overrides);
+    assert.equal(row.deep, 0); assert.equal(row.planetary, 0);
+  }
+});
+test('null meteoblue seeing falls back to valid 7Timer seeing', () => {
+  const { row } = forecast({}, {}, meteoblue({ seeing: null }), timer(8));
+  assert.ok(Number.isNaN(row.mbSeeing));
+  assert.equal(row.planetary, 30);
+});
+test('no seeing source leaves Planetary unknown instead of reweighting wind and darkness', () => {
+  const { row } = forecast({}, {}, null, null);
+  assert.ok(Number.isNaN(row.planetary));
+  assert.ok(Number.isFinite(row.deep));
+});
+test('missing dew data stays unknown operational information', () => {
+  const { row } = forecast({ dew_point_2m: null });
+  assert.ok(Number.isNaN(row.dewQ));
+  assert.equal(row.deep, 100);
+});
+test('numeric strings and genuine zero weather values remain usable', () => {
+  const { row } = forecast({ cloud_cover: '0', precipitation: '0', precipitation_probability: '0' });
+  assert.equal(row.deep, 100); assert.equal(row.planetary, 100);
+});
+test('unknown scores render a neutral dash and never NaN', () => {
+  const { app, row } = forecast({ cloud_cover: null });
+  const html = app.renderNightTable([row], 0);
+  assert.doesNotMatch(html, /NaN/);
+  assert.match(html, /<td class="score"[^>]*>—<\/td>/);
+});
+test('summary chooses finite scores and has no best hour when all are unknown', () => {
+  const app = loadApp();
+  const rows = [{ deep: NaN }, { deep: 80 }, { deep: 60 }];
+  assert.equal(app.bestBy(rows, r => r.deep), rows[1]);
+  assert.equal(app.bestBy([{ deep: NaN }], r => r.deep), null);
+});
+test('null pressure profiles cannot fabricate an atmosphere seeing source', () => {
+  const { app } = forecast();
+  const profile = {};
+  for (const p of [850,700,500,300,250,200]) {
+    for (const key of ['geopotential_height','temperature','wind_speed','wind_direction']) {
+      profile[key + '_' + p + 'hPa'] = null;
+    }
+  }
+  assert.ok(Number.isNaN(app.atmosphereDiagnostics(profile, {}).quality));
+});
+test('zero or invalid meteoblue seeing never replaces a valid 7Timer source', () => {
+  for (const seeing of [0, '', false, -9999, 'invalid']) {
+    const { row } = forecast({}, {}, meteoblue({ seeing }), timer(8));
+    assert.ok(Number.isNaN(row.mbSeeing));
+    assert.equal(row.planetary, 30);
+  }
+});
 test.todo('DST transition must preserve distinct UTC hours (follow-up fix)');
 test.todo('superseded refresh responses must not overwrite a newer location (follow-up fix)');
+

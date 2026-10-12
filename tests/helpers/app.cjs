@@ -26,7 +26,8 @@ function loadApp({ now = '2026-10-12T12:30:00Z', sunAlt = -20, moonAlt = -10, il
     state, buildRows, horizonRows, visibleRows, groupNights, nightKey,
     moonPenalty, darknessQuality, conservativeCloud, nearestIndex,
     meteoblueIndex, buildAstroIndex, seeingQualityFromIndex,
-    transparencyQuality, dewQuality, renderNightTable
+    transparencyQuality, dewQuality, renderNightTable, bestBy, atmosphereDiagnostics
   })`, context);
 }
 module.exports = { loadApp };
+
