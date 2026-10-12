@@ -7,6 +7,7 @@ import re
 import subprocess
 import tempfile
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
@@ -15,30 +16,43 @@ FILES = (
     "api/.htaccess", "api/7timer.php", "api/meteoblue.php",
     "index.html", "sw.js",
 )
-PUBLIC_URL = "https://test.astro-foto.ch/astro-forecast"
 
 def configuration(env):
-    required = ("SFTP_HOST", "SFTP_USER", "SFTP_PRIVATE_KEY", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS")
+    required = ("SFTP_HOST", "SFTP_USER", "SFTP_PRIVATE_KEY", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS", "SITE_URL", "APP_PATH")
     missing = [key for key in required if not env.get(key, "").strip()]
     if missing:
-        raise ValueError("Missing GitHub secrets: " + ", ".join(missing))
+        raise ValueError("Missing deployment configuration: " + ", ".join(missing))
     host, user = env["SFTP_HOST"], env["SFTP_USER"]
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", host):
         raise ValueError("SFTP_HOST must be a hostname")
     if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", user):
         raise ValueError("SFTP_USER contains unsupported characters")
-    remote = env["SFTP_REMOTE_DIR"].rstrip("/")
-    if not re.fullmatch(r"/[A-Za-z0-9_./-]+", remote):
-        raise ValueError("SFTP_REMOTE_DIR must be an absolute path without spaces")
-    if ".." in PurePosixPath(remote).parts or PurePosixPath(remote).name != "astro-forecast":
-        raise ValueError("SFTP_REMOTE_DIR must point directly to the astro-forecast directory")
+    base = env["SFTP_REMOTE_DIR"].rstrip("/")
+    # SFTP starts in the remote login directory; ~/ becomes a relative path.
+    if base.startswith("~/"):
+        base = base[2:]
+    if not re.fullmatch(r"/?[A-Za-z0-9_./-]+", base):
+        raise ValueError("SFTP_REMOTE_DIR must be an absolute or ~/ path without spaces")
+    if not env["SFTP_REMOTE_DIR"].startswith(("/", "~/")) or ".." in base.split("/"):
+        raise ValueError("SFTP_REMOTE_DIR must not traverse parent directories")
+    app = env["APP_PATH"]
+    if not re.fullmatch(r"/[A-Za-z0-9_-]+", app):
+        raise ValueError("APP_PATH must be a single app subdirectory, e.g. /astro-forecast")
+    if PurePosixPath(base).name == app.lstrip("/"):
+        raise ValueError("SFTP_REMOTE_DIR must be the website directory, without APP_PATH")
+    remote = base + app
+    site = env["SITE_URL"].rstrip("/")
+    url = urlsplit(site)
+    if url.scheme != "https" or not url.hostname or url.username or url.password or url.path or url.query or url.fragment:
+        raise ValueError("SITE_URL must be an HTTPS website origin without path or credentials")
+    public_url = site + app
     port = int(env.get("SFTP_PORT") or "22")
     if not 1 <= port <= 65535:
         raise ValueError("SFTP_PORT is out of range")
-    revision = env.get("GITHUB_SHA", "")
+    revision = env.get("DEPLOY_SHA") or env.get("GITHUB_SHA", "")
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("GITHUB_SHA must be the checked-out commit SHA")
-    return host, user, remote, port, revision
+    return host, user, remote, port, revision, public_url
 
 def batch_commands(remote, revision):
     # Stage every upload before replacing any live file. Config files are excluded.
@@ -49,9 +63,9 @@ def batch_commands(remote, revision):
         commands.append(f'rename "{path}.deploy-{revision}" "{path}"')
     return "\n".join(commands) + "\n"
 
-def verify_public_files(revision):
+def verify_public_files(revision, public_url):
     for path in ("index.html", "app.js", "sw.js"):
-        request = Request(f"{PUBLIC_URL}/{path}?deploy={revision}", headers={"Cache-Control": "no-cache"})
+        request = Request(f"{public_url}/{path}?deploy={revision}", headers={"Cache-Control": "no-cache"})
         with urlopen(request, timeout=30) as response:
             body = response.read()
         expected = (ROOT / path).read_bytes()
@@ -60,7 +74,7 @@ def verify_public_files(revision):
     print("Public index.html, app.js and sw.js match the deployed commit.")
 
 def main():
-    host, user, remote, port, revision = configuration(os.environ)
+    host, user, remote, port, revision, public_url = configuration(os.environ)
     for path in FILES:
         if not (ROOT / path).is_file():
             raise ValueError(f"Missing deployment file: {path}")
@@ -92,7 +106,7 @@ def main():
             "-oUserKnownHostsFile=" + str(known_hosts),
             "-oConnectTimeout=15", user + "@" + host,
         ], cwd=ROOT, env=child_env, check=True, timeout=300)
-    verify_public_files(revision)
+    verify_public_files(revision, public_url)
 
 if __name__ == "__main__":
     main()

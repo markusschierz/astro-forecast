@@ -1,4 +1,4 @@
-name: Deploy test.astro-foto.ch
+name: Deploy test
 on:
   workflow_dispatch:
 permissions:
@@ -36,7 +36,9 @@ jobs:
           SFTP_USER: ${{ secrets.SFTP_USER }}
           SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
           SFTP_KEY_PASSPHRASE: ${{ secrets.SFTP_KEY_PASSPHRASE }}
-          SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+          SFTP_REMOTE_DIR: ${{ vars.SFTP_REMOTE_DIR }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          APP_PATH: ${{ vars.APP_PATH }}
           SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
           SFTP_PORT: ${{ vars.SFTP_PORT }}
         run: python3 scripts/deploy_test.py

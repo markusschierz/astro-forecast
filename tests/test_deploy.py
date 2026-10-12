@@ -12,7 +12,8 @@ class DeploymentTests(unittest.TestCase):
     def env(self, **overrides):
         return {
             "SFTP_HOST": "example.hostpoint.ch", "SFTP_USER": "test_user",
-            "SFTP_PRIVATE_KEY": "fixture-private-key", "SFTP_REMOTE_DIR": "/www/test.astro-foto.ch/astro-forecast",
+            "SFTP_PRIVATE_KEY": "fixture-private-key", "SFTP_REMOTE_DIR": "/www/test.astro-foto.ch",
+            "APP_PATH": "/astro-forecast", "SITE_URL": "https://test.astro-foto.ch",
             "SFTP_KNOWN_HOSTS": "fixture-host-key", "GITHUB_SHA": "a" * 40,
             **overrides,
         }
@@ -21,12 +22,12 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(deploy.configuration(self.env())[3], 22)
 
     def test_missing_secrets_fail_before_network_access(self):
-        for key in ("SFTP_HOST", "SFTP_USER", "SFTP_PRIVATE_KEY", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS"):
+        for key in ("SFTP_HOST", "SFTP_USER", "SFTP_PRIVATE_KEY", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS", "SITE_URL", "APP_PATH"):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 deploy.configuration(self.env(**{key: ""}))
 
     def test_wrong_or_injected_remote_paths_are_rejected(self):
-        for path in ("/www", "/www/astro-forecast/../astro-forecast", "/www/astro-forecast\nrm x", "/www/other-app"):
+        for path in ("/www/astro-forecast", "/www/../site", "/www/site\nrm x", "www/site"):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 deploy.configuration(self.env(SFTP_REMOTE_DIR=path))
 
@@ -82,7 +83,33 @@ class DeploymentTests(unittest.TestCase):
                 ) as verify:
                     deploy.main()
                     transfer.assert_called_once()
-                    verify.assert_called_once_with("a" * 40)
+                    verify.assert_called_once_with("a" * 40, "https://test.astro-foto.ch/astro-forecast")
+
+
+    def test_website_and_app_paths_are_combined_once(self):
+        for base, expected in (
+            ("/www/test.astro-foto.ch", "/www/test.astro-foto.ch/astro-forecast"),
+            ("~/www/test.astro-foto.ch", "www/test.astro-foto.ch/astro-forecast"),
+            ("/www/astro-foto.ch/", "/www/astro-foto.ch/astro-forecast"),
+        ):
+            with self.subTest(base=base):
+                self.assertEqual(deploy.configuration(self.env(SFTP_REMOTE_DIR=base))[2], expected)
+
+    def test_public_url_comes_from_environment(self):
+        cfg = deploy.configuration(self.env(SITE_URL="https://astro-foto.ch/"))
+        self.assertEqual(cfg[5], "https://astro-foto.ch/astro-forecast")
+
+    def test_invalid_app_path_and_site_url_are_rejected(self):
+        for values in (
+            {"APP_PATH": "/"}, {"APP_PATH": "/../astro-forecast"},
+            {"SITE_URL": "http://astro-foto.ch"}, {"SITE_URL": "https://astro-foto.ch/other"},
+            {"SITE_URL": "https://user:pass@astro-foto.ch"}, {"SITE_URL": "https://astro-foto.ch?x=1"},
+        ):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                deploy.configuration(self.env(**values))
+
+    def test_explicit_tested_revision_overrides_workflow_revision(self):
+        self.assertEqual(deploy.configuration(self.env(DEPLOY_SHA="b" * 40))[4], "b" * 40)
 
 if __name__ == "__main__":
     unittest.main()

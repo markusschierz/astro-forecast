@@ -155,34 +155,55 @@ GitHub Actions prüft bei Pull Requests und bei Pushes auf `main` zusätzlich di
 
 Nicht abgedeckt: reale API-Schemata und Erreichbarkeit, astronomische Genauigkeit von SunCalc, PHP-Proxy-Verhalten, Browserlayout, Touch-Scrollen und WordPress-Einbettung. Dafür folgen Adapter-/Integrationstests und Browserprüfungen in separaten Pull Requests.
 
-## Deployment auf test.astro-foto.ch
+## Deployment: Test und Produktion
 
-Der Workflow **Deploy test.astro-foto.ch** wird ausschließlich manuell unter **Actions → Deploy test.astro-foto.ch → Run workflow → main** gestartet. Er deployt den ausgewählten Commit von main nach erfolgreichen Tests. Pushes und Pull Requests lösen kein Deployment aus.
+Beide Workflows werden ausschließlich manuell auf main gestartet. Pushes und Merges lösen keine Veröffentlichung aus. Der vorhandene Test-Workflow heißt **Deploy test**, der Produktions-Workflow **Deploy production**.
 
-Vor dem ersten Lauf unter **Settings → Environments** das Environment **test** anlegen. Die folgenden Environment-Secrets dort hinterlegen (alternativ Repository-Secrets unter **Settings → Secrets and variables → Actions**):
+### Gemeinsame Repository-Secrets
 
-| Secret | Wert |
+Unter **Settings → Secrets and variables → Actions**:
+
+| Secret | Inhalt |
 | --- | --- |
-| SFTP_HOST | SFTP-Server aus dem Hostpoint Control Panel, ohne Protokoll |
-| SFTP_USER | SSH-Benutzername des Hostpoint-Hostingkontos |
-| SFTP_PRIVATE_KEY | Vollständiger privater SSH-Schlüssel, einschließlich BEGIN/END-Zeilen |
-| SFTP_REMOTE_DIR | Absoluter SFTP-Pfad des bestehenden Ordners der Testseite, mit Endung `/astro-forecast` |
-| SFTP_KNOWN_HOSTS | Verifizierter SSH-Host-Key des SFTP-Servers im OpenSSH-known_hosts-Format |
+| SFTP_HOST | Hostpoint-SSH-Server ohne Protokoll |
+| SFTP_USER | SSH-Benutzername des Hostingkontos |
+| SFTP_PRIVATE_KEY | Vollständiger privater SSH-Schlüssel einschließlich BEGIN/END-Zeilen |
+| SFTP_KEY_PASSPHRASE | Optional: Passphrase bei verschlüsseltem Schlüssel |
+| SFTP_KNOWN_HOSTS | Verifizierte SSH-Host-Key-Zeile im OpenSSH-known_hosts-Format |
 
-Falls Port 22 nicht zutrifft, zusätzlich die Environment-Variable **SFTP_PORT** setzen. Bei einem verschlüsselten privaten Schlüssel zusätzlich das Secret **SFTP_KEY_PASSPHRASE** setzen. Die Passphrase wird nur zum Entschlüsseln des Schlüssels verwendet; eine Serveranmeldung per Passwort ist deaktiviert. Private Schlüssel und Passphrasen nicht in Repository-Dateien oder Chat eintragen.
+SFTP_PASSWORD wird nicht verwendet. Den öffentlichen Schlüssel bei Hostpoint hinterlegen. Private Schlüssel und Passphrasen nicht in Repository-Dateien oder Chat eintragen.
 
-Der öffentliche Schlüssel muss bei Hostpoint für den SSH-Benutzernamen hinterlegt sein. Der Benutzername bleibt auch bei Schlüsselanmeldung erforderlich. Ein dedizierter Deployment-Schlüssel kann getrennt vom persönlichen Schlüssel verwaltet werden.
+Den Server-Key aus einer bereits verifizierten lokalen known_hosts-Datei übernehmen. Bei einem anderen Port als 22 lautet der Host-Eintrag [SERVER]:PORT. Eine neu mit ssh-keyscan gelesene Zeile erst nach unabhängiger Fingerprint-Prüfung verwenden. Unbekannte oder abweichende Keys werden abgelehnt.
 
-Den absoluten Zielpfad aus der bestehenden SFTP-Verbindung übernehmen und prüfen, dass er zu **test.astro-foto.ch** gehört. Der Ordner und sein Unterordner `api` müssen bereits existieren. Der Workflow erstellt keine WordPress-Seite und ändert keine iframe-Einbindung.
+### Environment-Variablen
 
-Für **SFTP_KNOWN_HOSTS** die passende Zeile aus einer bereits verifizierten lokalen `~/.ssh/known_hosts` übernehmen. Alternativ `ssh-keyscan -p 22 SFTP_SERVER` ausführen und den Fingerprint über eine vertrauenswürdige Hostpoint-Quelle oder die bereits verifizierte Verbindung vergleichen, bevor die Zeile als Secret gespeichert wird. Bei einem anderen Port muss die Zeile den Host als `[SFTP_SERVER]:PORT` enthalten. Der Workflow akzeptiert keinen unbekannten oder abweichenden Server-Key.
+Unter **Settings → Environments** die Environments **test** und **production** konfigurieren, Deployment branches jeweils auf **main** beschränken.
 
-Übertragen werden ausschließlich zehn App-Dateien: HTML, CSS, JavaScript, Manifest, Icons sowie die beiden PHP-Proxys und `api/.htaccess`. **config.local.php, .env, WordPress-Dateien, Tests und Entwicklungsserver werden nicht übertragen oder gelöscht.** Der serverseitige meteoblue-Key bleibt erhalten.
+| Variable | test | production |
+| --- | --- | --- |
+| SITE_URL | https://test.astro-foto.ch | https://astro-foto.ch |
+| APP_PATH | /astro-forecast | /astro-forecast |
+| SFTP_PORT | 22 | 22 |
+| SFTP_REMOTE_DIR | Website-Verzeichnis der Testseite, z. B. /www/test.astro-foto.ch | Website-Verzeichnis der Produktion, z. B. /www/astro-foto.ch |
 
-Alle Dateien werden zuerst unter temporären Namen hochgeladen, danach einzeln umbenannt; HTML und Service Worker folgen zuletzt. Dies ist kein transaktionaler Wechsel des gesamten Verzeichnisses. Bei einem Fehler während des Umbenennens kann ein Teilstand entstehen; nach Behebung denselben oder einen korrigierten main-Stand erneut ausführen. Anschließend vergleicht der Workflow die öffentlich erreichbaren Dateien `index.html`, `app.js` und `sw.js` mit dem Commit. Eine fehlgeschlagene HTTP-Prüfung macht den Lauf rot, rollt aber keinen bereits erfolgten Upload zurück.
+Die Verzeichnisse sind Beispiele und müssen zum tatsächlichen Hostpoint-Zugang passen. **SFTP_REMOTE_DIR enthält keinen App-Unterordner.** APP_PATH wird genau einmal angehängt. Die öffentliche App-URL entsteht aus SITE_URL + APP_PATH. Absolute Verzeichnisse und ~/www/... sind erlaubt; ~/ wird als Pfad relativ zum SFTP-Anmeldeverzeichnis behandelt. Kein lokales Home-Verzeichnis des GitHub-Runners wird verwendet.
 
-Lokale Deployment-Tests ohne Zugangsdaten oder Netzwerk:
+App-Ordner und api-Unterordner müssen bereits existieren. config.local.php und .env bleiben auf dem Server erhalten; es werden nur zehn App-Dateien übertragen. Keine WordPress-Datei oder iframe-Einbindung wird verändert.
+
+### Ablauf
+
+1. **Actions → Deploy test → Run workflow → main** ausführen.
+2. Erfolgreichen Lauf und App auf der Testseite prüfen.
+3. Die numerische Run-ID aus der URL des erfolgreichen Laufs übernehmen: /actions/runs/RUN_ID.
+4. **Actions → Deploy production → Run workflow → main** starten und die Run-ID als test_run_id eingeben.
+
+Produktion akzeptiert nur einen erfolgreich abgeschlossenen, manuellen Test-Deployment-Lauf desselben Repositorys von main. Sie verwendet **dessen exakten Commit**, auch wenn main inzwischen weitergelaufen ist. Der manuelle Start nach Sichtprüfung ist die Produktionsfreigabe. Zusätzlich konfigurierte Environment-Reviewer werden von GitHub angewendet.
+
+Dateien werden vollständig unter temporären Namen hochgeladen und danach einzeln ersetzt; HTML und Service Worker zuletzt. Das ist kein transaktionaler Verzeichniswechsel. Bei einem Rename-Fehler kann ein Teilstand entstehen. Die HTTP-Prüfung vergleicht index.html, app.js und sw.js mit dem Commit; sie macht bei Abweichungen den Lauf rot, rollt aber keinen Upload zurück. Ein technischer Erfolg ersetzt keine Sichtprüfung.
+
+Lokale Prüfungen ohne Zugangsdaten oder Netzwerk:
 
 ```bash
+npm test
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
