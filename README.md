@@ -11,7 +11,7 @@ Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden
 
 ## Aktueller Stand
 
-Die sichtbare App-Version ist **3.9**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
+Die sichtbare App-Version ist **3.10**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
 
 - Standortsuche mit Winterthur als Standard; gespeicherter Standort im Browser.
 - Stündliches Raster mit Prognosezeiträumen von 3, 5 und 8 Tagen. Die Quellen können kürzere Horizonte liefern; 8 Tage bedeuten derzeit nicht garantiert 192 kommende Stunden.
@@ -38,14 +38,14 @@ Seeing-Priorität: meteoblue seeing_arcsec → 7Timer-Klasse → Atmosphärenind
 
 ## Score-Logik
 
-- Deep Sky: Transparenz 48 %, Wind 20 %, Mondlicht 17 %, Dunkelheit 15 %.
-- Planetary: Seeing 70 %, Wind 16 %, Dunkelheit 14 %.
+- Deep Sky: Transparenz 55 %, Wind 15 %, Mondlicht 20 %, Dunkelheit 10 %.
+- Planetary: Seeing 80 %, Wind 20 %; ohne Dunkelheitsgewichtung oder Dämmerungsabzug.
 - Wolken und optionaler Nebel wirken als gemeinsames Sichtbarkeits-Gate; der schlechtere Wert wird verwendet.
 - Wolken-Konsens bei zwei Quellen: 65 % des höheren und 35 % des niedrigeren Wertes; bei einer Quelle gilt deren Wert. 100 % versus 0 % ergeben somit 65 % Konsens, nicht vollständige Blockierung.
 - Niederschlagswahrscheinlichkeit wirkt quadratisch; modellierte Niederschlagsmenge ab 0,05 mm/h setzt beide Scores auf 0.
 - Fehlende Gesamtbewölkung aus beiden Quellen oder fehlende Niederschlagsmenge/-wahrscheinlichkeit ergeben unbekannte Scores, dargestellt als neutraler Strich. Ein bekannter Showstopper bleibt bei 0.
 - Ohne Seeing-Quelle einschließlich Atmosphärenindikator bleibt Planetary unbekannt. Unbekannte Scores werden nicht als beste Stunde ausgewählt.
-- Tau beeinflusst den Score nicht direkt; Luftfeuchte kann weiterhin in den Transparenz-Fallback eingehen.
+- Tau beeinflusst den Score nicht direkt; der Transparenz-Fallback nutzt Luftfeuchte und verfügbare Sichtweite, ohne Bewölkung erneut einzurechnen.
 - Gefordert sind Mondbeleuchtung und Horizonthöhe. Ein Ziel–Mond-Abstand gehört nicht zum Funktionsumfang.
 
 ## meteoblue-Key auf dem Webserver
@@ -95,7 +95,7 @@ npm run check:js
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-30 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 13 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
+33 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 13 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
 
 Zwei TODO-Einträge sind noch keine ausführbaren Tests: Zeitumstellung und überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
 

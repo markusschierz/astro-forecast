@@ -66,7 +66,7 @@ test('moon above horizon affects Deep Sky but not Planetary', () => {
 });
 test('meteoblue direct seeing takes priority over 7Timer', () => {
   const { row } = forecast({}, {}, meteoblue({ seeing: 2.8 }), timer(1));
-  assert.equal(row.planetary, 30);
+  assert.equal(row.planetary, 20);
 });
 test('7Timer supplies seeing when meteoblue is absent', () => {
   assert.ok(forecast({}, {}, null, timer(8)).row.planetary < forecast().row.planetary);
@@ -142,7 +142,7 @@ test('known showstoppers retain zero scores despite another missing gate input',
 test('null meteoblue seeing falls back to valid 7Timer seeing', () => {
   const { row } = forecast({}, {}, meteoblue({ seeing: null }), timer(8));
   assert.ok(Number.isNaN(row.mbSeeing));
-  assert.equal(row.planetary, 30);
+  assert.equal(row.planetary, 20);
 });
 test('no seeing source leaves Planetary unknown instead of reweighting wind and darkness', () => {
   const { row } = forecast({}, {}, null, null);
@@ -184,9 +184,28 @@ test('zero or invalid meteoblue seeing never replaces a valid 7Timer source', ()
   for (const seeing of [0, '', false, -9999, 'invalid']) {
     const { row } = forecast({}, {}, meteoblue({ seeing }), timer(8));
     assert.ok(Number.isNaN(row.mbSeeing));
-    assert.equal(row.planetary, 30);
+    assert.equal(row.planetary, 20);
   }
 });
 test.todo('DST transition must preserve distinct UTC hours (follow-up fix)');
 test.todo('superseded refresh responses must not overwrite a newer location (follow-up fix)');
 
+
+
+test('Planetary remains independent of solar altitude through twilight', () => {
+  for (const sunAlt of [-20, -12, -6, -2, 5]) {
+    assert.equal(forecast({}, { sunAlt }).row.planetary, 100);
+  }
+});
+test('fallback transparency ignores cloud layers while total clouds still gate scores', () => {
+  const clear = forecast({}, {}, null, timer(1, null)).row;
+  const high = forecast({ cloud_cover_high: 100 }, {}, null, timer(1, null)).row;
+  const cloudy = forecast({ cloud_cover: 50, cloud_cover_high: 100 }, {}, null, timer(1, null)).row;
+  assert.equal(clear.transQ, high.transQ);
+  assert.equal(clear.deep, high.deep);
+  assert.equal(cloudy.transQ, clear.transQ);
+  assert.equal(cloudy.deep, 50);
+});
+test('Deep Sky full overhead moon costs twenty points', () => {
+  assert.equal(forecast({}, { moonAlt: 90, illumination: 1 }).row.deep, 80);
+});
