@@ -1,0 +1,45 @@
+name: Deploy test.astro-foto.ch
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-test-astro-forecast
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript and forecast regressions
+        run: |
+          npm run check:js
+          npm test
+      - name: Check deployment tests and Python syntax
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          python3 -c "from pathlib import Path; compile(Path('dev_server.py').read_text(), 'dev_server.py', 'exec'); compile(Path('scripts/deploy_test.py').read_text(), 'scripts/deploy_test.py', 'exec')"
+      - name: Check PHP syntax
+        run: |
+          php -l api/7timer.php
+          php -l api/meteoblue.php
+          php -l api/config.example.php
+      - name: Install SFTP password helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes sshpass
+      - name: Deploy app files and verify public version
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+          SFTP_PORT: ${{ vars.SFTP_PORT }}
+        run: python3 scripts/deploy_test.py

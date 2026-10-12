@@ -24,3 +24,5 @@ jobs:
           php -l api/config.example.php
       - name: Python syntax
         run: python3 -c "from pathlib import Path; compile(Path('dev_server.py').read_text(), 'dev_server.py', 'exec')"
+      - name: Deployment configuration tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
