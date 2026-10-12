@@ -73,6 +73,32 @@ def verify_public_files(revision, public_url):
             raise RuntimeError(f"Public verification failed for {path}")
     print("Public index.html, app.js and sw.js match the deployed commit.")
 
+def validate_private_key(private_key, child_env):
+    # Decode locally before connecting; never print key material or passphrases.
+    result = subprocess.run(
+        ["ssh-keygen", "-y", "-f", str(private_key)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        env=child_env, timeout=30, check=False,
+    )
+    if result.returncode:
+        raise ValueError("Cannot unlock SFTP_PRIVATE_KEY. Check the complete private key and SFTP_KEY_PASSPHRASE.")
+    print("Private key successfully unlocked.", flush=True)
+
+
+def sftp_command(batch, private_key, port, known_hosts, user, host, encrypted):
+    # OpenSSH uses the first value. -b adds BatchMode=yes, so our override MUST precede it.
+    return [
+        "sftp", "-oBatchMode=" + ("no" if encrypted else "yes"),
+        "-b", str(batch), "-i", str(private_key), "-P", str(port),
+        "-oIdentitiesOnly=yes", "-oIdentityAgent=none",
+        "-oPreferredAuthentications=publickey",
+        "-oPasswordAuthentication=no", "-oKbdInteractiveAuthentication=no",
+        "-oStrictHostKeyChecking=yes",
+        "-oUserKnownHostsFile=" + str(known_hosts),
+        "-oConnectTimeout=15", user + "@" + host,
+    ]
+
+
 def main():
     host, user, remote, port, revision, public_url = configuration(os.environ)
     for path in FILES:
@@ -96,16 +122,9 @@ def main():
             child_env["SSH_ASKPASS"] = str(askpass)
             child_env["SSH_ASKPASS_REQUIRE"] = "force"
             child_env["DISPLAY"] = "astro-deploy"
-        subprocess.run([
-            "sftp", "-b", str(batch), "-i", str(private_key),
-            "-P", str(port), "-oBatchMode=" + ("no" if passphrase else "yes"),
-            "-oIdentitiesOnly=yes", "-oIdentityAgent=none",
-            "-oPreferredAuthentications=publickey",
-            "-oPasswordAuthentication=no", "-oKbdInteractiveAuthentication=no",
-            "-oStrictHostKeyChecking=yes",
-            "-oUserKnownHostsFile=" + str(known_hosts),
-            "-oConnectTimeout=15", user + "@" + host,
-        ], cwd=ROOT, env=child_env, check=True, timeout=300)
+        validate_private_key(private_key, child_env)
+        subprocess.run(sftp_command(batch, private_key, port, known_hosts, user, host, bool(passphrase)),
+                       cwd=ROOT, env=child_env, check=True, timeout=300)
     verify_public_files(revision, public_url)
 
 if __name__ == "__main__":
