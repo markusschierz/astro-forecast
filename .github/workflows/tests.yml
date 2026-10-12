@@ -1,0 +1,26 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: npm run check:js
+      - name: Forecast regression tests
+        run: npm test
+      - name: PHP syntax
+        run: |
+          php -l api/7timer.php
+          php -l api/meteoblue.php
+          php -l api/config.example.php
+      - name: Python syntax
+        run: python3 -c "from pathlib import Path; compile(Path('dev_server.py').read_text(), 'dev_server.py', 'exec')"
