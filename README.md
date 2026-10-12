@@ -135,3 +135,20 @@ Der lokale Entwicklungsserver stellt sowohl `/api/7timer.php` als auch `/api/met
   .astro-forecast-frame iframe { height: 1700px; border-radius: 1rem; }
 }
 ```
+
+## Automatisierte Prüfungen
+
+Voraussetzung: Node.js 22 oder neuer. Keine npm-Pakete oder API-Schlüssel nötig.
+
+```bash
+npm test
+npm run check:js
+```
+
+Die Regressionstests führen den unveränderten `app.js` in einem isolierten Node-VM-Kontext aus. Kontrollierte Wetter-Fixtures, eine feste Uhrzeit und ein SunCalc-Testdouble machen die Prüfungen unabhängig von Netzwerk und aktuellen Prognosen. Abgedeckt sind Score-Gates, Tau, Mondbeleuchtung/-höhe, Seeing-Priorität, Zeitfilter, Nachtgruppierung, 3h-Zuordnung und die kompakte Tabellenausgabe.
+
+Drei `test.todo`-Einträge dokumentieren Folgearbeiten: fehlende Wetterwerte, Zeitumstellung und überholte Refresh-Antworten. Sie sind noch keine ausführbaren Fehlerprüfungen und zählen nicht als bestandene Regressionstests.
+
+GitHub Actions prüft bei Pull Requests und bei Pushes auf `main` zusätzlich die JavaScript-, PHP- und Python-Syntax. Der Workflow führt kein Deployment aus.
+
+Nicht abgedeckt: reale API-Schemata und Erreichbarkeit, astronomische Genauigkeit von SunCalc, PHP-Proxy-Verhalten, Browserlayout, Touch-Scrollen und WordPress-Einbettung. Dafür folgen Adapter-/Integrationstests und Browserprüfungen in separaten Pull Requests.
