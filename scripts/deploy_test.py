@@ -18,7 +18,7 @@ FILES = (
 PUBLIC_URL = "https://test.astro-foto.ch/astro-forecast"
 
 def configuration(env):
-    required = ("SFTP_HOST", "SFTP_USER", "SFTP_PASSWORD", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS")
+    required = ("SFTP_HOST", "SFTP_USER", "SFTP_PRIVATE_KEY", "SFTP_REMOTE_DIR", "SFTP_KNOWN_HOSTS")
     missing = [key for key in required if not env.get(key, "").strip()]
     if missing:
         raise ValueError("Missing GitHub secrets: " + ", ".join(missing))
@@ -70,12 +70,24 @@ def main():
         known_hosts.chmod(0o600)
         batch = Path(temp) / "upload.sftp"
         batch.write_text(batch_commands(remote, revision))
+        private_key = Path(temp) / "id_deploy"
+        private_key.write_text(os.environ["SFTP_PRIVATE_KEY"].rstrip() + "\n")
+        private_key.chmod(0o600)
         child_env = os.environ.copy()
-        child_env["SSHPASS"] = os.environ["SFTP_PASSWORD"]
+        passphrase = os.environ.get("SFTP_KEY_PASSPHRASE", "")
+        if passphrase:
+            askpass = Path(temp) / "askpass"
+            askpass.write_text("#!/bin/sh\nprintf '%s\\n' \"$SFTP_KEY_PASSPHRASE\"\n")
+            askpass.chmod(0o700)
+            child_env["SSH_ASKPASS"] = str(askpass)
+            child_env["SSH_ASKPASS_REQUIRE"] = "force"
+            child_env["DISPLAY"] = "astro-deploy"
         subprocess.run([
-            "sshpass", "-e", "sftp", "-b", str(batch),
-            "-P", str(port), "-oBatchMode=no",
-            "-oPreferredAuthentications=password,keyboard-interactive",
+            "sftp", "-b", str(batch), "-i", str(private_key),
+            "-P", str(port), "-oBatchMode=" + ("no" if passphrase else "yes"),
+            "-oIdentitiesOnly=yes", "-oIdentityAgent=none",
+            "-oPreferredAuthentications=publickey",
+            "-oPasswordAuthentication=no", "-oKbdInteractiveAuthentication=no",
             "-oStrictHostKeyChecking=yes",
             "-oUserKnownHostsFile=" + str(known_hosts),
             "-oConnectTimeout=15", user + "@" + host,
