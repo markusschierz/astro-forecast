@@ -4,7 +4,7 @@
 
 Astro Forecast unterstützt die Planung von Astrofotografie. Die aktuelle Webapp wird auf astro-foto.ch betrieben; test.astro-foto.ch ist die Testumgebung vor der Produktionsfreigabe. WordPress ist die Einbettung, keine Voraussetzung der fachlichen Berechnung.
 
-Spätere Android- und CLI-Clients sind mögliche Erweiterungen. Es gibt dafür noch keinen Client, keine ausgewählte technische Plattform und keine Zusage zum Implementierungsumfang.
+Der Android-DEV-Client unter android/ bündelt dieselbe Weboberfläche in einer nativen WebView-Activity für Sideloading. GPS nutzt navigator.geolocation mit Android-Standortberechtigungen; manuelle Standortsuche bleibt verfügbar. Hoch- und Querformat sind unterstützt. Ein CLI-Client bleibt eine mögliche spätere Erweiterung.
 
 ## Heutige Implementierung
 
@@ -18,6 +18,7 @@ Spätere Android- und CLI-Clients sind mögliche Erweiterungen. Es gibt dafür n
 | manifest.webmanifest / sw.js | Installierbare Weboberfläche und App-Datei-Cache |
 | tests/ | Deterministische Forecast- und Deployment-Prüfungen |
 | scripts/ / .github/workflows/ | Automatische Branch-Deployments und Übernahme getesteter Inhalte |
+| android/ / .github/workflows/android.yml | Native WebView-Hülle, gemeinsame gebündelte Webdateien und APK-Build ohne Website-Deployment |
 
 Die fachliche Logik ist heute noch mit DOM, globalem state und Browser-APIs verbunden. Die VM-Testbasis ermöglicht Tests ohne Browser, ist aber keine fertig extrahierte gemeinsame Bibliothek.
 
@@ -32,7 +33,7 @@ Bei künftigen funktionalen Änderungen schrittweise trennen:
 
 Der Kern soll weder WordPress noch eine konkrete Website-Adresse oder DOM benötigen. Fehlende Werte, Quellenherkunft und Score-Gründe sollen Teil der Ergebnisse sein. Existierende Tests und Formeln sichern das Verhalten während einer späteren Trennung ab.
 
-Ob Android/CLI eine gemeinsame Bibliothek, eine Backend-API oder eine andere Integration verwenden, wird erst bei einem konkreten Auftrag entschieden. Eine PWA ist bereits teilweise vorhanden, aber keine native Android-App; vollständige Offline-Prognosen sind nicht implementiert.
+Android nutzt heute dieselbe app.js ohne duplizierte Berechnungen. WebViewAssetLoader stellt nur die erlaubten UI-Dateien unter dem HTTPS-Origin astro-foto.ch bereit; PHP-Anfragen gehen an die vorhandenen Produktions-Proxys. Berechtigungen gelten nur für diesen Origin. API-Key und serverseitige Konfiguration bleiben auf dem Server. Details stehen in ANDROID.md. Eine separate native Android-Oberfläche und die CLI-Integration sind noch nicht implementiert; vollständige Offline-Prognosen ebenfalls nicht.
 
 ## Verbindliche Entwicklungsregeln
 
@@ -50,7 +51,6 @@ Ob Android/CLI eine gemeinsame Bibliothek, eine Backend-API oder eine andere Int
 
 ## Offene technische Arbeiten
 
-- Parallele Refresh-Antworten gegen überholte Standortdaten absichern.
 - Timeout des Frontends mit der sequenziellen meteoblue-Fallback-Kette abstimmen.
 - Tatsächlichen kommenden Prognosehorizont korrekt behandeln.
 - Wetter-Fallbackquelle, Datenalter und native Auflösung transparent anzeigen.

@@ -14,6 +14,8 @@ const state = {
   meteoblue: null,
   rows: []
 };
+let locationSelectionRevision = 0;
+let refreshRevision = 0;
 
 const $ = (sel) => document.querySelector(sel);
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -225,15 +227,18 @@ async function fetchWeather(loc) {
 }
 
 async function refresh() {
+  const revision = ++refreshRevision;
+  const loc = state.location;
   setStatus('Daten werden geladen…');
   renderLocation();
   try {
     const [weatherResult, upperResult, astroResult, meteoblueResult] = await Promise.allSettled([
-      fetchWeather(state.location),
-      fetchJson(upperAirUrl(state.location)),
-      fetchJson(astroProxyUrl(state.location), 15000),
-      fetchJson(meteoblueProxyUrl(state.location), 18000)
+      fetchWeather(loc),
+      fetchJson(upperAirUrl(loc)),
+      fetchJson(astroProxyUrl(loc), 15000),
+      fetchJson(meteoblueProxyUrl(loc), 18000)
     ]);
+    if (revision !== refreshRevision || loc !== state.location) return;
     if (weatherResult.status !== 'fulfilled') throw weatherResult.reason;
     state.weather = weatherResult.value;
     state.upperAir = upperResult.status === 'fulfilled' ? upperResult.value : null;
@@ -256,6 +261,7 @@ async function refresh() {
     setStatus(notes.join(' · '), state.upperAir ? 'ok' : '');
     $('#updatedAt').textContent = `Aktualisiert ${formatLocal(new Date(), {hour:'2-digit', minute:'2-digit'})}`;
   } catch (err) {
+    if (revision !== refreshRevision || loc !== state.location) return;
     console.error(err);
     setStatus(`Fehler beim Laden der Vorhersage: ${err.message || err}`, 'error');
   }
@@ -726,6 +732,62 @@ function renderTable() {
 }
 function setStatus(text,mode=''){const el=$('#status');el.textContent=text;el.className=`status card ${mode}`.trim();}
 async function geocode(query){const p=new URLSearchParams({name:query,count:'8',language:'de',format:'json'});const data=await fetchJson(`https://geocoding-api.open-meteo.com/v1/search?${p}`);return data.results||[];}
+function gpsLocation(coords, metadata) {
+  const latitude = numericValue(coords.latitude), longitude = numericValue(coords.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    throw new Error('Ungültige GPS-Koordinaten.');
+  }
+  if (typeof metadata.timezone !== 'string') throw new Error('Standortzeitzone nicht verfügbar.');
+  // Validate the provider's timezone before it reaches forecast rendering.
+  new Intl.DateTimeFormat('de-CH', {timeZone: metadata.timezone});
+  return {
+    name: 'GPS-Standort', latitude, longitude,
+    elevation: finite(metadata.elevation) ? numericValue(metadata.elevation) : undefined,
+    timezone: metadata.timezone,
+    admin1: `${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`
+  };
+}
+function selectLocation(loc) {
+  ++locationSelectionRevision;
+  state.location = loc;
+  state.weather = null;
+  state.upperAir = null;
+  state.astro = null;
+  state.meteoblue = null;
+  state.rows = [];
+  saveLocation(loc);
+  $('#searchResults').hidden = true;
+  for (const selector of ['#summary', '#forecastCard', '#details']) $(selector).hidden = true;
+}
+async function useGpsLocation() {
+  const revision = ++locationSelectionRevision;
+  const button = $('#gpsBtn');
+  if (!navigator.geolocation) {
+    setStatus('GPS ist nicht verfügbar. Bitte den Standort über die Suche eingeben.', 'error');
+    return;
+  }
+  button.disabled = true;
+  setStatus('GPS-Standort wird ermittelt…');
+  try {
+    const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true, timeout: 20000, maximumAge: 60000
+    }));
+    if (revision !== locationSelectionRevision) return;
+    const params = new URLSearchParams({latitude: position.coords.latitude, longitude: position.coords.longitude, timezone: 'auto', forecast_days: '1'});
+    const metadata = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params}`);
+    if (revision !== locationSelectionRevision) return;
+    selectLocation(gpsLocation(position.coords, metadata));
+    await refresh();
+  } catch (err) {
+    if (revision !== locationSelectionRevision) return;
+    const message = err.code === 1 ? 'Standortberechtigung wurde nicht erteilt.'
+      : err.code === 2 ? 'Kein GPS-Standort verfügbar.'
+      : err.code === 3 ? 'GPS-Abfrage hat zu lange gedauert.' : (err.message || 'Standort konnte nicht ermittelt werden.');
+    setStatus(`${message} Bitte erneut versuchen oder den Standort über die Suche eingeben.`, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
 function renderSearchResults(results){
   const box=$('#searchResults');
   if(!results.length){box.hidden=false;box.innerHTML='<div class="search-result">Keine Treffer</div>';return;}
@@ -734,14 +796,15 @@ function renderSearchResults(results){
     return `<button class="search-result" type="button" data-index="${i}"><strong>${escapeHtml(r.name)}</strong><small>${escapeHtml(sub)}</small></button>`;
   }).join('');
   box.querySelectorAll('[data-index]').forEach(btn=>btn.addEventListener('click',()=>{
-    const r=results[Number(btn.dataset.index)]; state.location={name:r.name,latitude:r.latitude,longitude:r.longitude,elevation:r.elevation,country:r.country,admin1:r.admin1,timezone:r.timezone};
-    saveLocation(state.location);box.hidden=true;refresh();
+    const r=results[Number(btn.dataset.index)]; selectLocation({name:r.name,latitude:r.latitude,longitude:r.longitude,elevation:r.elevation,country:r.country,admin1:r.admin1,timezone:r.timezone});
+    refresh();
   }));
 }
 
-$('#searchForm').addEventListener('submit',async(e)=>{e.preventDefault();const q=$('#locationInput').value.trim();if(q.length<2)return;setStatus('Standort wird gesucht…');try{const results=await geocode(q);renderSearchResults(results);setStatus(results.length?'Standort auswählen.':'Kein Standort gefunden.');}catch(err){setStatus(`Standortsuche fehlgeschlagen: ${err.message||err}`,'error');}});
+$('#searchForm').addEventListener('submit',async(e)=>{e.preventDefault();const q=$('#locationInput').value.trim();if(q.length<2)return;const revision=++locationSelectionRevision;setStatus('Standort wird gesucht…');try{const results=await geocode(q);if(revision!==locationSelectionRevision)return;renderSearchResults(results);setStatus(results.length?'Standort auswählen.':'Kein Standort gefunden.');}catch(err){if(revision!==locationSelectionRevision)return;setStatus(`Standortsuche fehlgeschlagen: ${err.message||err}`,'error');}});
+$('#gpsBtn').addEventListener('click',useGpsLocation);
 $('#refreshBtn').addEventListener('click',refresh);
 $('#settingsBtn').addEventListener('click',()=>$('#infoDialog').showModal());
 document.querySelectorAll('.range-btn').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');state.hours=Number(btn.dataset.hours);if(state.rows.length)renderAll();}));
-window.addEventListener('load',()=>{renderLocation();refresh();if('serviceWorker'in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(()=>{});});
+window.addEventListener('load',()=>{renderLocation();refresh();if('serviceWorker'in navigator&&location.protocol!=='file:'&&new URLSearchParams(location.search).get('android')!=='1')navigator.serviceWorker.register('./sw.js').catch(()=>{});});
 

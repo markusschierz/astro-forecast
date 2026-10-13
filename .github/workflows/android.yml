@@ -1,0 +1,48 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['android/**', 'app.js', 'index.html', 'styles.css', 'manifest.webmanifest', 'icon-*.png', 'tests/**', '.github/workflows/android.yml']
+  push:
+    branches: ['develop/**']
+    paths: ['android/**', 'app.js', 'index.html', 'styles.css', 'manifest.webmanifest', 'icon-*.png', 'tests/**', '.github/workflows/android.yml']
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Shared application checks
+        run: |
+          npm run check:js
+          npm test
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          php -l api/7timer.php
+          php -l api/meteoblue.php
+          php -l api/config.example.php
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android build packages
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Assemble and lint sideload APK
+        working-directory: android
+        run: bash ./gradlew assembleDebug lintDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astro-forecast-android-dev
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-lint-report
+          path: android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
