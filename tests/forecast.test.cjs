@@ -187,7 +187,21 @@ test('zero or invalid meteoblue seeing never replaces a valid 7Timer source', ()
     assert.equal(row.planetary, 20);
   }
 });
-test.todo('DST transition must preserve distinct UTC hours (follow-up fix)');
+test('DST repeated and skipped local hours preserve absolute forecast windows', () => {
+  for (const [times, labels] of [
+    [['2026-10-25T00:00Z','2026-10-25T01:00Z','2026-10-25T02:00Z'], ['02:00','02:00','03:00']],
+    [['2026-03-29T00:00Z','2026-03-29T01:00Z','2026-03-29T02:00Z'], ['01:00','03:00','04:00']]
+  ]) {
+    const app = windowApp(times, {precipitation: [0, 0.05, 0]});
+    app.state.location.timezone = 'Europe/Zurich';
+    const rows = app.buildRows();
+    assert.deepEqual(Array.from(rows, r => r.localTime.slice(11)), labels);
+    assert.equal(rows[0].precip, 0.05); assert.equal(rows[1].precip, 0);
+    assert.equal(rows[1].dateUtc - rows[0].dateUtc, 3600e3);
+    assert.equal(rows[0].dateEndUtc.getTime(), rows[1].dateUtc.getTime());
+    assert.equal(app.groupNights(rows).length, 1);
+  }
+});
 test.todo('superseded refresh responses must not overwrite a newer location (follow-up fix)');
 
 
@@ -208,4 +222,85 @@ test('fallback transparency ignores cloud layers while total clouds still gate s
 });
 test('Deep Sky full overhead moon costs twenty points', () => {
   assert.equal(forecast({}, { moonAlt: 90, illumination: 1 }).row.deep, 80);
+});
+
+function windowApp(times, overrides = {}) {
+  const app = loadApp();
+  app.state.location.timezone = 'UTC';
+  app.state.weather = weather();
+  const wh = app.state.weather.hourly;
+  wh.time = times.map(t => Date.parse(t) / 1000);
+  for (const key of Object.keys(wh)) {
+    if (key !== 'time') wh[key] = times.map(() => wh[key][0]);
+  }
+  Object.assign(wh, overrides);
+  app.state.astro = timer();
+  return app;
+}
+
+test('rain and displayed amount belong to the starting hour, not the preceding hour', () => {
+  const app = windowApp(['2026-10-12T21:00Z','2026-10-12T22:00Z','2026-10-12T23:00Z'], {
+    precipitation: [0, 0.05, 0], cloud_cover: [0, 30, 80], temperature_2m: [10, 11, 12]
+  });
+  const rows = app.buildRows();
+  assert.equal(rows[0].precip, 0.05);
+  assert.equal(rows[0].deep, 0); assert.equal(rows[0].planetary, 0);
+  assert.equal(rows[1].precip, 0);
+  assert.equal(rows[1].cloud, 30); assert.equal(rows[1].temp, 11);
+  assert.equal(rows[1].deep, 70); assert.equal(rows[1].planetary, 70);
+  assert.match(app.renderNightTable([rows[0]], 0), /class="c-bad"[^>]*>0\.05 mm \/ 0%/);
+  assert.match(app.renderNightTable([rows[0]], 0), /title="21:00–21:59"/);
+});
+test('precipitation probability gates the same window shown in the table', () => {
+  const app = windowApp(['2026-10-12T22:00Z','2026-10-12T23:00Z'], {
+    precipitation_probability: [100, 50]
+  });
+  const row = app.buildRows()[0];
+  assert.equal(row.pop, 50);
+  assert.equal(row.deep, 25); assert.equal(row.planetary, 25);
+  assert.match(app.renderNightTable([row], 0), /0\.00 mm \/ 50%/);
+});
+test('gust maximum affects display and scores in its own window', () => {
+  const app = windowApp(['2026-10-12T22:00Z','2026-10-12T23:00Z'], {
+    wind_gusts_10m: [0, 45]
+  });
+  const row = app.buildRows()[0];
+  assert.equal(row.gust, 45);
+  assert.equal(row.deep, 95); assert.equal(row.planetary, 94);
+  assert.match(app.renderNightTable([row], 0), />45 km\/h</);
+});
+test('midnight end aggregate is assigned to the previous starting hour', () => {
+  const app = windowApp(['2026-10-12T23:00Z','2026-10-13T00:00Z'], { precipitation: [0, 0.05] });
+  const row = app.buildRows()[0];
+  assert.equal(row.localTime, '2026-10-12T23:00');
+  assert.equal(row.dateEndUtc.toISOString(), '2026-10-13T00:00:00.000Z');
+  assert.equal(row.deep, 0);
+  assert.equal(app.hourIntervalLabel(row), '23:00–23:59');
+});
+test('missing end or a two-hour gap cannot reuse a previous-hour aggregate', () => {
+  for (const times of [
+    ['2026-10-12T22:00Z'],
+    ['2026-10-12T22:00Z','2026-10-13T00:00Z']
+  ]) {
+    const app = windowApp(times, { precipitation: times.map(() => 0) });
+    const row = app.buildRows()[0];
+    for (const key of ['precip','pop','gust','deep','planetary']) assert.ok(Number.isNaN(row[key]), key);
+  }
+});
+test('absolute timestamps align upper-air values despite different response offsets', () => {
+  const app = windowApp(['2026-10-12T22:00Z','2026-10-12T23:00Z']);
+  app.state.astro = null;
+  app.state.weather.hourly.relative_humidity_2m = [98, 98];
+  app.state.upperAir = {utc_offset_seconds: 7200, hourly: {
+    time: ['2026-10-13T00:00'], relative_humidity_700hPa: [35]
+  }};
+  assert.equal(app.buildRows()[0].transQ, 50);
+});
+test('API requests use UTC unix timestamps for both weather and upper air', () => {
+  const app = loadApp();
+  for (const url of [app.weatherUrl(app.state.location), app.upperAirUrl(app.state.location)]) {
+    const params = new URLSearchParams(url.split('?')[1]);
+    assert.equal(params.get('timezone'), 'UTC');
+    assert.equal(params.get('timeformat'), 'unixtime');
+  }
 });

@@ -111,7 +111,7 @@ function weatherUrl(loc, useMeteoswiss = true) {
       'cloud_cover','cloud_cover_low','cloud_cover_mid','cloud_cover_high',
       'wind_speed_10m','wind_gusts_10m','cloud_base','cape'
     ].join(','),
-    timezone: 'auto', forecast_days: '8'
+    timezone: 'UTC', timeformat: 'unixtime', forecast_days: '8'
   });
   if (finite(loc.elevation)) p.set('elevation', loc.elevation);
   if (useMeteoswiss) p.set('models', 'meteoswiss_icon_seamless');
@@ -129,7 +129,7 @@ function upperAirUrl(loc) {
     latitude: loc.latitude,
     longitude: loc.longitude,
     hourly: vars.join(','),
-    timezone: 'auto', forecast_days: '8', wind_speed_unit: 'ms'
+    timezone: 'UTC', timeformat: 'unixtime', forecast_days: '8', wind_speed_unit: 'ms'
   });
   return `https://api.open-meteo.com/v1/forecast?${q}`;
 }
@@ -279,7 +279,8 @@ function buildHourlyIndex(data) {
   for (let i=0; i<data.hourly.time.length; i++) {
     const row = {time:data.hourly.time[i]};
     for (const k of keys) row[k] = data.hourly[k]?.[i];
-    map.set(data.hourly.time[i], row);
+    const date = toUtcFromOpenMeteo(data.hourly.time[i], data.utc_offset_seconds);
+    if (Number.isFinite(date.getTime())) map.set(date.getTime(), row);
   }
   return map;
 }
@@ -291,8 +292,42 @@ function sunMoon(dateUtc) {
   return {sunAlt:sun.altitude*180/Math.PI, moonAlt:moon.altitude*180/Math.PI, moonIllum:illum.fraction};
 }
 function toUtcFromOpenMeteo(localTime, utcOffsetSeconds) {
+  if (typeof localTime === 'number') return new Date(localTime * 1000);
   const pseudoUtc = new Date(localTime + 'Z');
   return new Date(pseudoUtc.getTime() - (utcOffsetSeconds || 0) * 1000);
+}
+
+// A row represents [dateUtc, dateUtc + 1h). Instant forecasts describe its
+// start. Open-Meteo's preceding-hour aggregates describe it at its end.
+function forecastHour(wh, index, i, offset) {
+  const dateUtc = toUtcFromOpenMeteo(wh.time[i], offset);
+  const dateEndUtc = new Date(dateUtc.getTime() + 3600e3);
+  const end = index.get(dateEndUtc.getTime());
+  return {
+    dateUtc, dateEndUtc,
+    gust: numericValue(end?.wind_gusts_10m),
+    precip: numericValue(end?.precipitation),
+    pop: numericValue(end?.precipitation_probability)
+  };
+}
+function precipitationGate(precip, pop) {
+  const probability = Number.isFinite(pop) ? Math.pow(clamp(1 - pop / 100, 0, 1), 2) : NaN;
+  const amount = Number.isFinite(precip) ? clamp(1 - precip / 0.05, 0, 1) : NaN;
+  return probability === 0 || amount === 0 ? 0 : Math.min(probability, amount);
+}
+
+function localHourISO(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: state.location.timezone || 'Europe/Zurich',
+    year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+  }).formatToParts(date);
+  const part = type => parts.find(p => p.type === type).value;
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+}
+function hourIntervalLabel(r) {
+  const end = new Date(r.dateUtc.getTime() + 3600e3 - 60000);
+  const options = {hour:'2-digit', minute:'2-digit'};
+  return `${formatLocal(r.dateUtc,options)}–${formatLocal(end,options)}`;
 }
 
 function windVector(speedMs, directionDeg) {
@@ -365,6 +400,7 @@ function confidenceQuality(c) { return c === 'hoch' ? 90 : c === 'mittel' ? 65 :
 function buildRows() {
   const wh = state.weather?.hourly;
   if (!wh?.time) return [];
+  const weatherIndex = buildHourlyIndex(state.weather);
   const upper = buildHourlyIndex(state.upperAir);
   const astro = buildAstroIndex();
   const mbFreeData = state.meteoblue?.free?.ok ? state.meteoblue.free.data : null;
@@ -387,9 +423,10 @@ function buildRows() {
   const result = [];
 
   for (let i=0; i<wh.time.length; i++) {
-    const localTime = wh.time[i];
-    const u = upper.get(localTime) || {};
-    const dateUtc = toUtcFromOpenMeteo(localTime, offset);
+    const {dateUtc, dateEndUtc, gust, precip, pop} = forecastHour(wh, weatherIndex, i, offset);
+    if (!Number.isFinite(dateUtc.getTime())) continue;
+    const localTime = localHourISO(dateUtc);
+    const u = upper.get(dateUtc.getTime()) || {};
     const sm = sunMoon(dateUtc);
 
     let a = astro.get(isoHourUTC(dateUtc));
@@ -422,7 +459,7 @@ function buildRows() {
     const mbBadGradient = mb1i === undefined ? NaN : seriesValue(mb1?.badlayer_gradient, mb1i);
 
     const surface = {
-      cape:numericValue(wh.cape?.[i]), wind_speed_10m:numericValue(wh.wind_speed_10m?.[i]), wind_gusts_10m:numericValue(wh.wind_gusts_10m?.[i])
+      cape:numericValue(wh.cape?.[i]), wind_speed_10m:numericValue(wh.wind_speed_10m?.[i]), wind_gusts_10m:gust
     };
     const atm = atmosphereDiagnostics(u, surface);
     const confidence = seeingAgreement(mbSeeing, seeingIndex, atm.quality);
@@ -433,8 +470,7 @@ function buildRows() {
     const midConsensus = conservativeCloud(mid, mbMid);
     const highConsensus = conservativeCloud(high, mbHigh);
     const temp=numericValue(wh.temperature_2m?.[i]), dew=numericValue(wh.dew_point_2m?.[i]), rh=numericValue(wh.relative_humidity_2m?.[i]);
-    const wind=numericValue(wh.wind_speed_10m?.[i]), gust=numericValue(wh.wind_gusts_10m?.[i]);
-    const precip=numericValue(wh.precipitation?.[i]), pop=numericValue(wh.precipitation_probability?.[i]);
+    const wind=numericValue(wh.wind_speed_10m?.[i]);
 
     const cloudQ = weighted([[percentQuality(cloudConsensus),.46],[percentQuality(lowConsensus),.20],[percentQuality(midConsensus),.16],[percentQuality(highConsensus),.18]]);
     // Cloud cover is handled exclusively by skyGate, including in the fallback.
@@ -463,13 +499,7 @@ function buildRows() {
     // Niederschlag ist für offene Astro-Ausrüstung ein eigener Killer:
     // Die Wahrscheinlichkeit wirkt bewusst überproportional stark.
     // Modellierter Niederschlag ab 0.05 mm/h setzt den Gate auf 0.
-    const popGate = Number.isFinite(pop)
-      ? Math.pow(clamp(1 - pop / 100, 0, 1), 2)
-      : NaN;
-    const amountGate = Number.isFinite(precip)
-      ? clamp(1 - precip / 0.05, 0, 1)
-      : NaN;
-    const precipGate = popGate === 0 || amountGate === 0 ? 0 : Math.min(popGate, amountGate);
+    const precipGate = precipitationGate(precip, pop);
 
     // Basisqualität nur aus Faktoren, die einander sinnvoll kompensieren können.
     const deepBase = [transQ,windQ,moonQ,darkQ].every(Number.isFinite) ? weighted([
@@ -485,7 +515,7 @@ function buildRows() {
     if (sm.sunAlt > -6) { deep *= darkQ/100; }
 
     result.push({
-      localTime,dateUtc,sunAlt:sm.sunAlt,moonAlt:sm.moonAlt,moonIllum:sm.moonIllum,
+      localTime,dateUtc,dateEndUtc,sunAlt:sm.sunAlt,moonAlt:sm.moonAlt,moonIllum:sm.moonIllum,
       cloud,low,mid,high,mbCloud,mbLow,mbMid,mbHigh,cloudConsensus,lowConsensus,midConsensus,highConsensus,mbCape,mbFog,mbVisibility,
       temp,dew,rh,wind,gust,precip,pop,cloudBase:numericValue(wh.cloud_base?.[i]),cape:numericValue(wh.cape?.[i]),
       seeingIndex,transIndex,mbSeeing,mbSeeing1,mbSeeing2,mbJet,mbBadBottom,mbBadTop,mbBadGradient,
@@ -606,7 +636,7 @@ function nightLabel(rows) {
 
 function renderNightTable(rows, nightIndex) {
   const group = name => `${name}-${nightIndex}`;
-  const head=rows.map(r=>`<th class="date-cell ${nightClass(r)}"><div>${formatLocal(r.dateUtc,{weekday:'short'})} ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})}</div><strong>${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}</strong></th>`);
+  const head=rows.map(r=>`<th class="date-cell ${nightClass(r)}" title="${escapeHtml(hourIntervalLabel(r))}"><div>${formatLocal(r.dateUtc,{weekday:'short'})} ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})}</div><strong>${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}</strong></th>`);
   const html=[]; html.push(`<thead><tr><th class="row-label">Zeit</th>${head.join('')}</tr></thead><tbody>`);
   // Kompakte Standardansicht.
   html.push(row('Deep Sky',rows.map(r=>cellByQuality(fmt(r.deep),r.deep,'score',Number.isFinite(r.deep)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
@@ -667,7 +697,7 @@ function renderNightTable(rows, nightIndex) {
   html.push(detailRow(group('weather'),'Taupunkt',rows.map(r=>td(fmt(r.dew,1,'°')))));
   html.push(detailRow(group('weather'),'ΔT Tau',rows.map(r=>cellByQuality(fmt(r.temp-r.dew,1,' K'),r.dewQ))));
   html.push(detailRow(group('weather'),'Feuchte',rows.map(r=>cellByQuality(fmt(r.rh,0,'%'),scaleQuality(r.rh,55,98)))));
-  html.push(detailRow(group('weather'),'Niederschlag',rows.map(r=>cellByQuality(`${fmt(r.precip,1,' mm')} / ${fmt(r.pop,0,'%')}`,Math.min(scaleQuality(r.precip,0,1.5),scaleQuality(r.pop,5,80))))));
+  html.push(detailRow(group('weather'),'Niederschlag',rows.map(r=>cellByQuality(`${fmt(r.precip,2,' mm')} / ${fmt(r.pop,0,'%')}`,100 * precipitationGate(r.precip, r.pop)))));
   html.push(detailRow(group('weather'),'Wolkenbasis',rows.map(r=>td(Number.isFinite(r.cloudBase)?`${Math.round(r.cloudBase)} m`:'—'))));
   html.push(detailRow(group('weather'),'CAPE meteoblue',rows.map(r=>Number.isFinite(r.mbCape)?cellByQuality(fmt(r.mbCape,0,' J/kg'),scaleQuality(r.mbCape,20,800)):td('—')), 'Konvektive verfügbare potentielle Energie aus meteoblue Air.'));
 

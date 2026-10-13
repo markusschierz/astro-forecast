@@ -9,8 +9,8 @@ function weather(overrides = {}) {
   return {
     utc_offset_seconds: 0,
     hourly: {
-      time: ['2026-10-12T22:00'],
-      ...Object.fromEntries(Object.entries(values).map(([key, value]) => [key, [value]]))
+      time: ['2026-10-12T22:00', '2026-10-12T23:00'],
+      ...Object.fromEntries(Object.entries(values).map(([key, value]) => [key, [value, value]]))
     }
   };
 }
