@@ -11,7 +11,7 @@ Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden
 
 ## Aktueller Stand
 
-Die sichtbare App-Version ist **3.10**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
+Die sichtbare App-Version ist **3.11**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
 
 - Standortsuche mit Winterthur als Standard; gespeicherter Standort im Browser.
 - Stündliches Raster mit Prognosezeiträumen von 3, 5 und 8 Tagen. Die Quellen können kürzere Horizonte liefern; 8 Tage bedeuten derzeit nicht garantiert 192 kommende Stunden.
@@ -35,6 +35,12 @@ Die sichtbare App-Version ist **3.10**. Deployment- und Dokumentationsänderunge
 meteoblue bevorzugt **clouds-1h + air-1h**, danach **clouds-1h + air-3h**, zuletzt **clouds-3h + air-3h**. Das Stundenraster der Anzeige bedeutet nicht, dass alle Quellen native Stundenwerte liefern: 3h-Werte werden zeitlich zugeordnet.
 
 Seeing-Priorität: meteoblue seeing_arcsec → 7Timer-Klasse → Atmosphärenindikator. Der eigene Indikator ist eine Qualitätsskala und keine direkte Seeing-Prognose in Bogensekunden. Die Anzeige der tatsächlichen Wetter-Fallbackquelle ist noch nicht überall korrekt.
+
+## Zeitfenster
+
+Jede angezeigte Uhrzeit bezeichnet die beginnende Stunde: 22:00 = 22:00–22:59 ([22:00, 23:00)). Anzeige und Score verwenden dieselben normalisierten Werte. Open-Meteo-Zustandsprognosen und Astronomie beschreiben den Stundenbeginn; Niederschlagsmenge, Niederschlagswahrscheinlichkeit und maximale Böen stammen vom Zeitstempel am Stundenende, da sie laut API die vorhergehende Stunde beschreiben. Diese Zuordnung gilt für die Hauptquelle und den Best-Match-Fallback.
+
+Wetter und Höhenprofile werden mit absoluten UTC-Unix-Zeitstempeln abgerufen. Die Standortzeitzone wird für Anzeige und Nachtgruppierung verwendet; dadurch bleiben auch wiederholte Stunden bei der Zeitumstellung getrennt. Fehlende Stundenendwerte bleiben unbekannt, ohne Ersatz aus einem anderen Zeitfenster. Quellen im 3h-Raster bleiben angenähert zugeordnet und erhalten keine erfundene Stundenauflösung.
 
 ## Score-Logik
 
@@ -95,9 +101,9 @@ npm run check:js
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-33 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 21 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
+41 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 21 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
 
-Zwei TODO-Einträge sind noch keine ausführbaren Tests: Zeitumstellung und überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
+Ein TODO-Eintrag ist noch kein ausführbarer Test: überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
 
 GitHub Actions prüft bei Pull Requests und Pushes auf main und test zusätzlich JavaScript-, PHP- und Python-Syntax sowie die Regressionstests. Der Check **baseline** ist für main verpflichtend. Die separaten Deployment-Workflows veröffentlichen nach ihren eigenen erfolgreichen Prüfungen automatisch.
 

@@ -25,7 +25,7 @@ function loadApp({ now = '2026-10-12T12:30:00Z', sunAlt = -20, moonAlt = -10, il
   return vm.runInContext(`({
     state, buildRows, horizonRows, visibleRows, groupNights, nightKey,
     moonPenalty, darknessQuality, conservativeCloud, nearestIndex,
-    meteoblueIndex, buildAstroIndex, seeingQualityFromIndex,
+    meteoblueIndex, buildAstroIndex, weatherUrl, upperAirUrl, hourIntervalLabel, seeingQualityFromIndex,
     transparencyQuality, dewQuality, renderNightTable, bestBy, atmosphereDiagnostics
   })`, context);
 }

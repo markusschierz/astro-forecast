@@ -17,7 +17,7 @@ Spätere Android- und CLI-Clients sind mögliche Erweiterungen. Es gibt dafür n
 | dev_server.py | Lokale Proxy-Nachbildung für Entwicklung |
 | manifest.webmanifest / sw.js | Installierbare Weboberfläche und App-Datei-Cache |
 | tests/ | Deterministische Forecast- und Deployment-Prüfungen |
-| scripts/ / .github/workflows/ | Manuelles Deployment und Übernahme getesteter Commits |
+| scripts/ / .github/workflows/ | Automatische Branch-Deployments und Übernahme getesteter Inhalte |
 
 Die fachliche Logik ist heute noch mit DOM, globalem state und Browser-APIs verbunden. Die VM-Testbasis ermöglicht Tests ohne Browser, ist aber keine fertig extrahierte gemeinsame Bibliothek.
 
@@ -52,7 +52,7 @@ Ob Android/CLI eine gemeinsame Bibliothek, eine Backend-API oder eine andere Int
 
 - Parallele Refresh-Antworten gegen überholte Standortdaten absichern.
 - Timeout des Frontends mit der sequenziellen meteoblue-Fallback-Kette abstimmen.
-- Zeitumstellungen und tatsächlichen kommenden Prognosehorizont korrekt behandeln.
+- Tatsächlichen kommenden Prognosehorizont korrekt behandeln.
 - Wetter-Fallbackquelle, Datenalter und native Auflösung transparent anzeigen.
 - Python- und PHP-Proxy-Verhalten angleichen.
 - PWA-Cache, SunCalc-Ausfall, Touch-Layout und iframe-Höhe absichern.
