@@ -1,11 +1,8 @@
 name: Deploy production
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      test_run_id:
-        description: ID of the successful test deployment after visual review
-        required: true
-        type: string
 permissions:
   contents: read
   actions: read
@@ -20,15 +17,14 @@ jobs:
       sha: ${{ steps.resolve.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Resolve tested commit
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          TEST_RUN_ID: ${{ inputs.test_run_id }}
         run: |
-          [[ "$TEST_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid test run ID"; exit 1; }
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID" > "$RUNNER_TEMP/test-run.json"
-          tested_sha=$(python3 scripts/resolve_test_run.py "$RUNNER_TEMP/test-run.json" "$GITHUB_REPOSITORY")
+          tested_sha=$(python3 scripts/resolve_test_run.py)
           echo "sha=$tested_sha" >> "$GITHUB_OUTPUT"
   deploy:
     needs: resolve

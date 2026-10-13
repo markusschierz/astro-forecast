@@ -95,11 +95,11 @@ npm run check:js
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-33 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 13 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
+33 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 21 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
 
 Zwei TODO-Einträge sind noch keine ausführbaren Tests: Zeitumstellung und überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
 
-GitHub Actions prüft bei Pull Requests und Pushes auf main zusätzlich JavaScript-, PHP- und Python-Syntax sowie die Regressionstests. Der Check **baseline** ist für main verpflichtend. Diese CI führt kein Deployment aus.
+GitHub Actions prüft bei Pull Requests und Pushes auf main und test zusätzlich JavaScript-, PHP- und Python-Syntax sowie die Regressionstests. Der Check **baseline** ist für main verpflichtend. Die separaten Deployment-Workflows veröffentlichen nach ihren eigenen erfolgreichen Prüfungen automatisch.
 
 ## WordPress-Einbindung
 
@@ -129,7 +129,7 @@ Die feste iframe-Höhe ist eine bestehende Einbindungslösung; automatische Höh
 
 ## Deployment: Test und Produktion
 
-Beide Workflows werden ausschließlich manuell auf main gestartet. Pushes und Merges lösen keine Veröffentlichung aus. Der vorhandene Test-Workflow heißt **Deploy test**, der Produktions-Workflow **Deploy production**.
+Pushes und Merges auf **test** starten das Testdeployment automatisch; auf **main** das Produktionsdeployment. Ein manueller Neustart bleibt über Run workflow möglich, ohne Run-ID-Eingabe. Der vorhandene Test-Workflow heißt **Deploy test**, der Produktions-Workflow **Deploy production**.
 
 ### Gemeinsame Repository-Secrets
 
@@ -149,7 +149,7 @@ Den Server-Key aus einer bereits verifizierten lokalen known_hosts-Datei überne
 
 ### Environment-Variablen
 
-Unter **Settings → Environments** die Environments **test** und **production** konfigurieren, Deployment branches jeweils auf **main** beschränken.
+Unter **Settings → Environments** die Environments **test** und **production** konfigurieren, Deployment branches für **test** auf den Branch **test**, für **production** auf **main** beschränken. Keine zusätzlichen Required reviewers konfigurieren; der Merge nach main ist die Freigabe.
 
 | Variable | test | production |
 | --- | --- | --- |
@@ -164,12 +164,12 @@ App-Ordner und api-Unterordner müssen bereits existieren. config.local.php und 
 
 ### Ablauf
 
-1. **Actions → Deploy test → Run workflow → main** ausführen.
-2. Erfolgreichen Lauf und App auf der Testseite prüfen.
-3. Die numerische Run-ID aus der URL des erfolgreichen Laufs übernehmen: /actions/runs/RUN_ID.
-4. **Actions → Deploy production → Run workflow → main** starten und die Run-ID als test_run_id eingeben.
+1. Änderungen auf einem Arbeitsbranch entwickeln und als Pull Request nach **test** übernehmen.
+2. **Deploy test** läuft automatisch. Erst nach erfolgreichem Lauf die Testseite prüfen.
+3. Den geprüften Stand per Pull Request von **test** nach **main** übernehmen. Dies ist die Produktionsfreigabe.
+4. **Deploy production** findet automatisch einen erfolgreichen Testlauf mit exakt gleichem Git-Dateibaum und deployt dessen Commit. Ein anderer Merge-Commit-Hash ist erlaubt; abweichende Inhalte sind gesperrt.
 
-Produktion akzeptiert nur einen erfolgreich abgeschlossenen, manuellen Test-Deployment-Lauf desselben Repositorys von main. Sie verwendet **dessen exakten Commit**, auch wenn main inzwischen weitergelaufen ist. Der manuelle Start nach Sichtprüfung ist die Produktionsfreigabe. Zusätzlich konfigurierte Environment-Reviewer werden von GitHub angewendet.
+Während der Sichtprüfung und Freigabe keine weiteren Änderungen nach test übernehmen. Nach dem Produktionsmerge main zurück nach test mergen, um beide Branches auf gemeinsamem Verlauf zu halten. test bleibt dauerhaft bestehen und wird nach einer Freigabe nicht gelöscht. Weitere Details zur einmaligen Einrichtung stehen in [docs/GITHUB-SETUP.md](docs/GITHUB-SETUP.md).
 
 Dateien werden vollständig unter temporären Namen hochgeladen und danach einzeln ersetzt; HTML und Service Worker zuletzt. Das ist kein transaktionaler Verzeichniswechsel. Bei einem Rename-Fehler kann ein Teilstand entstehen. Die HTTP-Prüfung vergleicht index.html, app.js und sw.js mit dem Commit; sie macht bei Abweichungen den Lauf rot, rollt aber keinen Upload zurück. Ein technischer Erfolg ersetzt keine Sichtprüfung.
 

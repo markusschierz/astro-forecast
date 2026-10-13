@@ -1,5 +1,7 @@
 name: Deploy test
 on:
+  push:
+    branches: [test]
   workflow_dispatch:
 permissions:
   contents: read
@@ -8,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/test'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: test
