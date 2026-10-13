@@ -2,6 +2,12 @@
 
 Repository: https://github.com/markusschierz/astro-forecast
 
+## Branches zuerst vorbereiten
+
+Unter Code → Branches den vollständig in main enthaltenen Branch test/forecast-baseline löschen. Dieser Name blockiert die Erstellung des Branchs test. Danach unter Code den Branch-Auswahldialog öffnen, main auswählen, test eingeben und Create branch: test from main wählen.
+
+PR #11 öffnen → Edit neben dem Titel → base von main auf test ändern → Change base. Erst nach den folgenden Environment-Einstellungen Ready for review und Merge pull request ausführen. ci/branch-deployments bis zum Merge erhalten. main und test dauerhaft behalten.
+
 ## Einmalig, vor dem ersten Merge nach test
 
 1. Settings → Environments → test → Deployment branches and tags → Selected branches and tags. Regel für Branch `test` hinzufügen; alte Branch-Regel `main` entfernen. Nicht das Environment löschen.
