@@ -7,13 +7,13 @@ Astro Forecast ist ein Projekt zur Planung von Astrofotografie mit Wetter-, Seei
 | Produktion | https://astro-foto.ch | https://astro-foto.ch/astro-forecast/ |
 | Test | https://test.astro-foto.ch | https://test.astro-foto.ch/astro-forecast/ |
 
-Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden werden. Android-App und CLI sind mögliche spätere Clients; sie sind noch nicht implementiert. Architektur und Entwicklungsregeln stehen in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden werden. Eine Android-DEV-App bündelt dieselbe Oberfläche als APK für Sideloading, mit Hoch-/Querformat, GPS und manueller Standortsuche. Build und Installation auf dem Pixel stehen in [docs/ANDROID.md](docs/ANDROID.md). Ein CLI-Client ist noch nicht implementiert. Architektur und Entwicklungsregeln stehen in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Aktueller Stand
 
-Die sichtbare App-Version ist **3.11**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
+Die sichtbare App-Version ist **3.12**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
 
-- Standortsuche mit Winterthur als Standard; gespeicherter Standort im Browser.
+- Standortsuche mit Winterthur als Standard, optional GPS; gespeicherter Standort im Browser bzw. in der Android-WebView.
 - Stündliches Raster mit Prognosezeiträumen von 3, 5 und 8 Tagen. Die Quellen können kürzere Horizonte liefern; 8 Tage bedeuten derzeit nicht garantiert 192 kommende Stunden.
 - Nächte untereinander, einschließlich angrenzender Sonnenuntergangs-/Sonnenaufgangsstunden; Details gruppenweise aufklappbar.
 - Getrennte Deep-Sky- und Planetary-Scores, Mondbeleuchtung und vorzeichenbehaftete Mondhöhe.
@@ -107,7 +107,7 @@ php -l api/config.example.php
 
 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. Die Python-Tests sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab; unittest discover lädt alle passenden test_*.py-Dateien unter tests/. Falls Python 3 lokal als python verfügbar ist, python statt python3 verwenden. Die Testausgaben zeigen die aktuelle Anzahl ausgeführter Tests sowie TODOs und Fehler.
 
-Ein TODO-Eintrag ist noch kein ausführbarer Test: überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
+Standorttests prüfen GPS-Fehler, Metadaten und verspätete Antworten bei Standortwechseln. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
 
 GitHub Actions prüft bei Pull Requests und Pushes auf main und test zusätzlich JavaScript-, PHP- und Python-Syntax sowie die Regressionstests. Der Check **baseline** ist für main verpflichtend. Die separaten Deployment-Workflows veröffentlichen nach ihren eigenen erfolgreichen Prüfungen automatisch.
 
