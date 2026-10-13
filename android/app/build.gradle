@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'ch.astrofoto.forecast'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId 'ch.astrofoto.forecast'
+        minSdk 28
+        targetSdk 36
+        versionCode 31200
+        versionName '3.12'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures { buildConfig true }
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/web-assets')
+    sourceSets.main.res.srcDir layout.buildDirectory.dir('generated/web-resources')
+    buildTypes.debug { applicationIdSuffix '.dev' }
+}
+
+// Bundle the shared UI directly, never the PHP proxies or server configuration.
+def syncWebAssets = tasks.register('syncWebAssets', Sync) {
+    from(rootProject.projectDir.parentFile) {
+        include 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'
+    }
+    into layout.buildDirectory.dir('generated/web-assets')
+}
+tasks.named('preBuild').configure { dependsOn syncWebAssets }
+def syncWebIcon = tasks.register('syncWebIcon', Sync) {
+    from(rootProject.projectDir.parentFile) {
+        include 'icon-192.png'
+        rename 'icon-192.png', 'ic_launcher.png'
+    }
+    into layout.buildDirectory.dir('generated/web-resources/drawable-nodpi')
+}
+tasks.named('preBuild').configure { dependsOn syncWebIcon }
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.14.0'
+    implementation 'androidx.activity:activity:1.10.1'
+}

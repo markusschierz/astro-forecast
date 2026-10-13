@@ -3,3 +3,8 @@ api/config.local.php
 __pycache__/
 *.pyc
 .DS_Store
+android/.gradle/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore

@@ -202,7 +202,6 @@ test('DST repeated and skipped local hours preserve absolute forecast windows', 
     assert.equal(app.groupNights(rows).length, 1);
   }
 });
-test.todo('superseded refresh responses must not overwrite a newer location (follow-up fix)');
 
 
 

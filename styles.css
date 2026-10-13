@@ -68,6 +68,8 @@ main > * { min-width: 0; }
 .search-panel { padding: 14px; }
 .search-panel label { display: block; color: #c8d5e9; font-weight: 650; margin-bottom: .45rem; }
 .search-row { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
+.gps-button { margin-top: .6rem; min-height: 44px; }
+button:disabled { opacity: .6; cursor: wait; }
 input {
   width: 100%;
   border: 1px solid var(--line);
