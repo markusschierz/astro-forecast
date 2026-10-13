@@ -45,6 +45,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py'
           php -l api/7timer.php
           php -l api/meteoblue.php
+          php -l api/config.example.php
       - name: Deploy tested commit and verify public files
         env:
           DEPLOY_SHA: ${{ needs.resolve.outputs.sha }}
