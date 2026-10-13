@@ -37,13 +37,13 @@ Ob Android/CLI eine gemeinsame Bibliothek, eine Backend-API oder eine andere Int
 ## Verbindliche Entwicklungsregeln
 
 - GitHub-Code ist die technische Ausgangsbasis; Funktionen und Design erhalten.
-- Änderungen auf separaten Branches mit Pull Requests gegen main; kein direkter Push auf main.
+- Änderungen auf separaten Branches mit Pull Requests gegen test; Freigabe per Pull Request von test nach main; kein direkter Push auf main.
 - Zusammengehörige Änderungen in einem PR bündeln.
 - CI-Check baseline muss bestehen; main ist durch Ruleset geschützt.
 - Änderungen an Anzeige oder Berechnung erhöhen die sichtbare App-Version und den Service-Worker-Cache-Namen.
 - Dokumentation, Tests und Deployment-Infrastruktur allein erhöhen nicht die App-Version.
 - Produktionsziel ist astro-foto.ch; Prüfung neuer Stände erfolgt über test.astro-foto.ch.
-- Deployment bleibt ein separater manueller Schritt. Produktion übernimmt den exakt getesteten Commit nach Sichtprüfung und Freigabe.
+- Push auf test deployt automatisch auf die Testseite. Der Merge des geprüften Stands nach main ist die Produktionsfreigabe und startet das Produktionsdeployment. Produktion übernimmt nur den Dateiinhalt eines erfolgreichen Testdeployments.
 - Zugangsdaten und API-Keys nie in das öffentliche Repository aufnehmen.
 - Mondfunktion: Beleuchtung und Höhe über/unter dem Horizont; kein Ziel–Mond-Abstand.
 - Android und CLI nicht ohne konkreten Auftrag implementieren.
