@@ -8,7 +8,8 @@
 
 ## Version branches and release process
 
-- Develop each release on develop/<next-version>, currently develop/3.11, starting from the current test branch. Group the release's related changes there.
+- Development branches use develop/<version>. Before selecting or creating a development branch, determine the current production version from index.html on the repository's main branch and check that sw.js has the matching cache version. Choose the next release version from that repository state; never assume a specific development version from this document.
+- Start each release's development branch from the current test branch and group the release's related changes there.
 - Changes to application behavior or display update the visible version and service-worker cache together. Documentation, tests and infrastructure alone do not bump the app version.
 - Submit development changes by PR into test. Never push directly to test or main.
 - A merge into test automatically runs validation and deploys to https://test.astro-foto.ch/astro-forecast/.

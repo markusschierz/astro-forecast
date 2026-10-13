@@ -93,15 +93,19 @@ Der Python-Entwicklungsserver stellt lokale Nachbildungen der PHP-Proxys bereit.
 
 ## Automatisierte Prüfungen
 
-Voraussetzung: Node.js 22 oder neuer und Python 3. Keine npm-Pakete oder API-Schlüssel nötig.
+Voraussetzung: Node.js 22 oder neuer, Python 3 und PHP für die Syntaxprüfung. Die Python-Deploymenttests benötigen außerdem OpenSSH mit ssh, sftp und ssh-keygen sowie eine POSIX-Shell, etwa unter Linux oder WSL. Keine npm-Pakete oder API-Schlüssel nötig. Die vollständige Testsuite und die Syntaxprüfungen ausführen:
 
 ```bash
 npm test
 npm run check:js
 python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -c "from pathlib import Path; files = ['dev_server.py', 'scripts/deploy_test.py', 'scripts/resolve_test_run.py']; [compile(Path(path).read_text(), path, 'exec') for path in files]"
+php -l api/7timer.php
+php -l api/meteoblue.php
+php -l api/config.example.php
 ```
 
-41 Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. 21 Python-Prüfungen sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab.
+Forecast-Regressionstests führen app.js in einem isolierten Node-VM-Kontext aus. Feste Uhrzeit, Wetter-Fixtures und SunCalc-Testdouble vermeiden Netzwerkabhängigkeiten. Die Python-Tests sichern Deployment-Konfiguration, SSH-Key-Handhabung und die Auswahl getesteter Commits ab; unittest discover lädt alle passenden test_*.py-Dateien unter tests/. Falls Python 3 lokal als python verfügbar ist, python statt python3 verwenden. Die Testausgaben zeigen die aktuelle Anzahl ausgeführter Tests sowie TODOs und Fehler.
 
 Ein TODO-Eintrag ist noch kein ausführbarer Test: überholte Refresh-Antworten. Live-API-Schemata, astronomische Genauigkeit, PHP-Verhalten und Browserlayout sind noch nicht automatisiert abgesichert.
 
