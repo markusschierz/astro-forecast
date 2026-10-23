@@ -120,9 +120,9 @@ input:focus { border-color: #5388c8; box-shadow: 0 0 0 3px rgba(83, 136, 200, .1
 .forecast-table th, .forecast-table td {
   border-right: 1px solid #1b2940;
   border-bottom: 1px solid #172238;
-  padding: .46rem .45rem;
+  padding: .46rem .16rem;
   text-align: center;
-  min-width: 62px;
+  min-width: 56px;
   height: 36px;
 }
 .forecast-table thead th { position: sticky; top: 0; z-index: 5; background: #111a2c; color: #d9e5f7; }
@@ -138,10 +138,19 @@ input:focus { border-color: #5388c8; box-shadow: 0 0 0 3px rgba(83, 136, 200, .1
   box-shadow: 1px 0 0 var(--line);
 }
 .forecast-table thead .row-label { z-index: 7; }
-.forecast-table .date-cell { min-width: 74px; }
+.forecast-table .date-cell { min-width: 56px; }
+.forecast-table td:not(.moon-cell) { overflow-wrap: anywhere; }
+.forecast-table .source-cell { line-height: 1.25; overflow-wrap: normal; }
+.forecast-table .source-cell wbr { display: inline; }
+.partial-hour { display: block; font-size: .62rem; font-weight: 400; color: #aebdd2; }
 .forecast-table .night { box-shadow: inset 0 3px 0 rgba(74, 115, 170, .55); }
 .forecast-table .astronomical { box-shadow: inset 0 3px 0 rgba(67, 118, 190, .95); }
 .forecast-table .daylight { opacity: .68; }
+.forecast-table .twilight-cell { padding: .36rem 0; }
+.twilight-segment { display: block; width: 100%; height: 16px; border-block: 1px solid rgba(255,255,255,.18); }
+.twilight-legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; padding: .45rem .85rem; color: var(--muted); font-size: .73rem; background: #0a1120; }
+.twilight-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+.twilight-legend i { display: inline-block; width: .8rem; height: .65rem; border-radius: 2px; }
 .score { font-weight: 800; color: #fff; }
 .c-excellent { background: color-mix(in srgb, var(--excellent) 68%, #0a1020); }
 .c-good { background: color-mix(in srgb, var(--good) 62%, #0a1020); }
@@ -260,11 +269,12 @@ dialog p { color: #b7c4d8; line-height: 1.55; }
   scrollbar-width: thin;
 }
 .night-table-wrap .forecast-table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: calc(132px + var(--hour-count) * 56px);
 }
 
 @media (max-width: 900px) {
+  .night-table-wrap .forecast-table { min-width: calc(112px + var(--hour-count) * 56px); }
   .night-table-wrap {
     scrollbar-gutter: stable;
   }

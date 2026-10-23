@@ -131,12 +131,33 @@ test('horizon starts at the current hour and respects selected length', () => {
   app.state.rows = [11, 12, 13, 14].map(hour => ({ dateUtc: new Date(`2026-10-12T${hour}:00:00Z`) }));
   assert.deepEqual(Array.from(app.horizonRows(), row => row.dateUtc.getUTCHours()), [12, 13]);
 });
-test('night filter includes adjacent sunrise and sunset hours only', () => {
-  const app = loadApp({ now: '2026-10-12T00:00:00Z' });
-  app.state.rows = [10, 5, -1, -10, -1, 5, 10].map((sunAlt, hour) => ({
-    sunAlt, dateUtc: new Date(Date.UTC(2026, 9, 12, hour))
+test('night filter uses any overlap below civil dusk, including partial boundary hours', () => {
+  const app = loadApp({ now: '2026-10-12T00:00:00Z', sunAltitudeAt: date => {
+    const hour = (date.getTime() - Date.parse('2026-10-12T00:00:00Z')) / 3600000;
+    return hour < 1.6 ? 5 : hour < 4.35 ? -10 : 5;
+  } });
+  app.state.rows = Array.from({length:7}, (_, hour) => ({
+    dateUtc: new Date(Date.UTC(2026, 9, 12, hour))
   }));
-  assert.deepEqual(Array.from(app.visibleRows(), row => row.dateUtc.getUTCHours()), [1, 2, 3, 4, 5]);
+  assert.deepEqual(Array.from(app.visibleRows(), row => row.dateUtc.getUTCHours()), [1, 2, 3, 4]);
+});
+test('twilight bar includes all stages and exact transition within an hour', () => {
+  const app = loadApp({ sunAltitudeAt: date => -3 - 20 * (date.getTime() - Date.parse('2026-10-12T18:00:00Z')) / 3600000 });
+  const start = Date.parse('2026-10-12T18:00:00Z');
+  const segments = app.twilightIntervals(start,start+3600000);
+  assert.deepEqual(Array.from(segments,s=>s.key), ['civil','nautical','astro','dark']);
+  assert.ok(Math.abs(segments[1].start - (start + 9*60000)) < 1000);
+  const html = app.twilightBarCell({dateUtc:new Date(start)});
+  assert.match(html, /linear-gradient/);
+  assert.match(html, /Nautische Dämmerung/);
+});
+test('repeated local 02:00 hours remain separate during winter clock change', () => {
+  const app = loadApp({ now: '2026-10-24T00:00:00Z' });
+  app.state.rows = ['2026-10-25T00:00:00Z','2026-10-25T01:00:00Z'].map(iso=>({
+    dateUtc:new Date(iso), localTime:'2026-10-25T02:00'
+  }));
+  assert.equal(app.visibleRows().length,2);
+  assert.equal(app.groupNights(app.visibleRows())[0].rows.length,2);
 });
 test('post-midnight hours belong to the preceding night', () => {
   const app = loadApp();
@@ -153,11 +174,29 @@ test('3h source lookup uses nearest sample and bounded tolerance', () => {
   assert.equal(app.nearestIndex(map, new Date('2026-10-12T23:00:00Z'), 2), 1);
   assert.equal(app.nearestIndex(map, new Date('2026-10-13T05:00:00Z'), 2), undefined);
 });
-test('night table shows illumination, signed moon altitude and dew beneath moon', () => {
+test('night table shows only moon illumination in summary and altitude in details', () => {
   const { app, row } = forecast({}, { moonAlt: -10, illumination: 0.5 });
   const html = app.renderNightTable([row], 0);
-  assert.match(html, /50% · -10°/);
+  const moonRow=html.match(/<tr><th[^>]*>Mond<\/th>(.*?)<\/tr>/)?.[1];
+  assert.match(moonRow,/50%/);
+  assert.doesNotMatch(moonRow,/-10°/);
+  assert.match(html, /Mondhöhe<\/th><td class="">-10°<\/td>/);
   assert.ok(html.indexOf('Tau-Risiko') > html.indexOf('Mond'));
+  const dewRow=html.match(/<tr><th[^>]*>Tau-Risiko<\/th>(.*?)<\/tr>/)?.[1];
+  assert.ok(dewRow);
+  assert.doesNotMatch(dewRow,/\d+\.\d+ K/);
+});
+test('compact forecast table wraps sources and precipitation and keeps the moon percentage', () => {
+  const {app,row}=forecast();
+  row.weatherSources.cloud_cover='MeteoSwiss';
+  row.weatherSources.wind_speed_10m='MeteoSwiss';
+  row.weatherSources.precipitation='MeteoSwiss';
+  row.weatherSources.precipitation_probability='Best Match';
+  const html=app.renderNightTable([row],0);
+  assert.match(html,/Meteo-<wbr>Swiss/);
+  assert.match(html,/Best<br class="source-break">Match/);
+  assert.match(html,/0\.00 mm<br>0%/);
+  assert.match(html,/moon-cell[^>]*>50%</);
 });
 test('missing cloud values suppress scores instead of implying clear sky', () => {
   for (const value of [null, undefined, '', ' ', false, -9999, NaN]) {
@@ -295,7 +334,7 @@ test('rain and displayed amount belong to the starting hour, not the preceding h
   assert.equal(rows[1].precip, 0);
   assert.equal(rows[1].cloud, 30); assert.equal(rows[1].temp, 11);
   assert.equal(rows[1].deep, 70); assert.equal(rows[1].planetary, 70);
-  assert.match(app.renderNightTable([rows[0]], 0), /class="c-bad"[^>]*>0\.05 mm \/ 0%/);
+  assert.match(app.renderNightTable([rows[0]], 0), /class="c-bad"[^>]*>0\.05 mm<br>0%/);
   assert.match(app.renderNightTable([rows[0]], 0), /title="21:00–21:59"/);
 });
 test('precipitation probability gates the same window shown in the table', () => {
@@ -305,7 +344,7 @@ test('precipitation probability gates the same window shown in the table', () =>
   const row = app.buildRows()[0];
   assert.equal(row.pop, 50);
   assert.equal(row.deep, 25); assert.equal(row.planetary, 25);
-  assert.match(app.renderNightTable([row], 0), /0\.00 mm \/ 50%/);
+  assert.match(app.renderNightTable([row], 0), /0\.00 mm<br>50%/);
 });
 test('gust maximum affects display and scores in its own window', () => {
   const app = windowApp(['2026-10-12T22:00Z','2026-10-12T23:00Z'], {
