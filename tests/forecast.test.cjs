@@ -174,17 +174,19 @@ test('3h source lookup uses nearest sample and bounded tolerance', () => {
   assert.equal(app.nearestIndex(map, new Date('2026-10-12T23:00:00Z'), 2), 1);
   assert.equal(app.nearestIndex(map, new Date('2026-10-13T05:00:00Z'), 2), undefined);
 });
-test('night table shows illumination, signed moon altitude and dew beneath moon', () => {
+test('night table shows only moon illumination in summary and altitude in details', () => {
   const { app, row } = forecast({}, { moonAlt: -10, illumination: 0.5 });
   const html = app.renderNightTable([row], 0);
-  assert.match(html, /50% · -10°/);
-  assert.match(html, /moon-cell/);
+  const moonRow=html.match(/<tr><th[^>]*>Mond<\/th>(.*?)<\/tr>/)?.[1];
+  assert.match(moonRow,/50%/);
+  assert.doesNotMatch(moonRow,/-10°/);
+  assert.match(html, /Mondhöhe<\/th><td class="">-10°<\/td>/);
   assert.ok(html.indexOf('Tau-Risiko') > html.indexOf('Mond'));
   const dewRow=html.match(/<tr><th[^>]*>Tau-Risiko<\/th>(.*?)<\/tr>/)?.[1];
   assert.ok(dewRow);
   assert.doesNotMatch(dewRow,/\d+\.\d+ K/);
 });
-test('compact forecast table wraps source names and precipitation but not moon content', () => {
+test('compact forecast table wraps sources and precipitation and keeps the moon percentage', () => {
   const {app,row}=forecast();
   row.weatherSources.cloud_cover='MeteoSwiss';
   row.weatherSources.wind_speed_10m='MeteoSwiss';
@@ -194,7 +196,7 @@ test('compact forecast table wraps source names and precipitation but not moon c
   assert.match(html,/Meteo-<wbr>Swiss/);
   assert.match(html,/Best<br class="source-break">Match/);
   assert.match(html,/0\.00 mm<br>0%/);
-  assert.match(html,/moon-cell/);
+  assert.match(html,/moon-cell[^>]*>50%</);
 });
 test('missing cloud values suppress scores instead of implying clear sky', () => {
   for (const value of [null, undefined, '', ' ', false, -9999, NaN]) {

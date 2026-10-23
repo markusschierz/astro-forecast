@@ -140,7 +140,6 @@ input:focus { border-color: #5388c8; box-shadow: 0 0 0 3px rgba(83, 136, 200, .1
 .forecast-table thead .row-label { z-index: 7; }
 .forecast-table .date-cell { min-width: 56px; }
 .forecast-table td:not(.moon-cell) { overflow-wrap: anywhere; }
-.forecast-table .moon-cell { white-space: nowrap; }
 .forecast-table .source-cell { line-height: 1.25; overflow-wrap: normal; }
 .forecast-table .source-cell wbr { display: inline; }
 .partial-hour { display: block; font-size: .62rem; font-weight: 400; color: #aebdd2; }
