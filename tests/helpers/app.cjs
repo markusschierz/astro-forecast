@@ -25,7 +25,7 @@ function loadApp({ now = '2026-10-12T12:30:00Z', sunAlt = -20, moonAlt = -10, il
   const source = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
   vm.runInContext(source, context, { filename: 'app.js' });
   return vm.runInContext(`({
-    state, buildRows, horizonRows, visibleRows, groupNights, nightKey,
+    state, buildRows, mergeWeather, horizonRows, visibleRows, groupNights, nightKey,
     moonPenalty, darknessQuality, conservativeCloud, nearestIndex,
     meteoblueIndex, buildAstroIndex, weatherUrl, upperAirUrl, hourIntervalLabel, seeingQualityFromIndex,
     transparencyQuality, dewQuality, renderNightTable, bestBy, atmosphereDiagnostics,
