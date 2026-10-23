@@ -314,6 +314,84 @@ function sunMoon(dateUtc) {
   const illum = SunCalc.getMoonIllumination(dateUtc);
   return {sunAlt:sun.altitude*180/Math.PI, moonAlt:moon.altitude*180/Math.PI, moonIllum:illum.fraction};
 }
+function solarAltitude(timeMs) {
+  if (!window.SunCalc) return NaN;
+  return SunCalc.getPosition(new Date(timeMs), state.location.latitude, state.location.longitude).altitude * 180 / Math.PI;
+}
+// Resolve twilight transitions against absolute timestamps, including DST nights.
+// A five-minute scan locates crossings; bisection refines them to < 1 second.
+function twilightIntervals(startMs, endMs) {
+  const stages = [
+    {limit:-18, key:'dark', label:'Astronomische Dunkelheit'},
+    {limit:-12, key:'astro', label:'Astronomische Dämmerung'},
+    {limit:-6, key:'nautical', label:'Nautische Dämmerung'},
+    {limit:0, key:'civil', label:'Zivile Dämmerung'}
+  ];
+  const category = altitude => {
+    if (!Number.isFinite(altitude)) return {key:'unknown',label:'Sonnenstand unbekannt'};
+    return stages.find(s=>altitude <= s.limit) || {key:'day',label:'Tag'};
+  };
+  const segments = [];
+  const altitudeAt = ms => solarAltitude(ms);
+  let from = startMs;
+  let prior = altitudeAt(from);
+  for (let next = Math.min(startMs + 300000, endMs); from < endMs; next = Math.min(from + 300000, endMs)) {
+    const current = altitudeAt(next);
+    const crossings = [];
+    if (Number.isFinite(prior) && Number.isFinite(current)) for (const s of stages) {
+      if ((prior <= s.limit) === (current <= s.limit)) continue;
+      let lo = from, hi = next;
+      const startsBelow = prior <= s.limit;
+      for (let k=0; k<16; k++) {
+        const mid = (lo + hi) / 2;
+        if ((altitudeAt(mid) <= s.limit) === startsBelow) lo = mid;
+        else hi = mid;
+      }
+      crossings.push((lo + hi) / 2);
+    }
+    crossings.sort((a,b)=>a-b);
+    const edges = [from,...crossings,next];
+    for (let k=0; k<edges.length-1; k++) {
+      const a=edges[k], b=edges[k+1];
+      if (b <= a) continue;
+      const stage=category(altitudeAt((a+b)/2));
+      const last=segments[segments.length-1];
+      if (last && last.key===stage.key) last.end=b;
+      else segments.push({start:a,end:b,...stage});
+    }
+    from=next;
+    prior=current;
+  }
+  return segments;
+}
+function nighttimeSegments(r) {
+  return twilightIntervals(r.dateUtc.getTime(),r.dateUtc.getTime()+3600000);
+}
+function darknessSunAltitude(startMs, endMs) {
+  const usable=twilightIntervals(startMs,endMs).filter(s=>s.key==='dark'||s.key==='astro'||s.key==='nautical');
+  if (!usable.length) return solarAltitude(startMs);
+  const total=usable.reduce((sum,s)=>sum+s.end-s.start,0);
+  let midpoint=total/2;
+  for (const s of usable) {
+    if (midpoint <= s.end-s.start) return solarAltitude(s.start+midpoint);
+    midpoint-=s.end-s.start;
+  }
+  return solarAltitude(startMs);
+}
+function twilightBarCell(r) {
+  const segments=nighttimeSegments(r);
+  const colors={day:'#d7a45b',civil:'#b88a5d',nautical:'#6489a9',astro:'#37558a',dark:'#101a35',unknown:'#485165'};
+  if (!segments.length) return td('—');
+  const stops=[];
+  for (const s of segments) {
+    const a=(s.start-r.dateUtc.getTime())/36000;
+    const b=(s.end-r.dateUtc.getTime())/36000;
+    stops.push(`${colors[s.key]} ${a.toFixed(3)}%`,`${colors[s.key]} ${b.toFixed(3)}%`);
+  }
+  const changes=segments.map(s=>`${formatLocal(new Date(s.start),{hour:'2-digit',minute:'2-digit'})} ${s.label}`).join(' · ');
+  const gradient=`linear-gradient(to right,${stops.join(',')})`;
+  return td(`<span class="twilight-segment" style="background:${gradient}" aria-label="${escapeHtml(changes)}"></span>`,'twilight-cell',changes);
+}
 function toUtcFromOpenMeteo(localTime, utcOffsetSeconds) {
   if (typeof localTime === 'number') return new Date(localTime * 1000);
   const pseudoUtc = new Date(localTime + 'Z');
@@ -513,7 +591,10 @@ function buildRows() {
     ]);
     const dewQ = dewQuality(temp,dew,rh);
     const windQ = weighted([[scaleQuality(wind,3,28),.7],[scaleQuality(gust,8,45),.3]]);
-    const darkQ = darknessQuality(sm.sunAlt);
+    // Evaluate darkness within the usable part of the hour, while weather
+    // and the displayed sun altitude keep their established hour-start timestamp.
+    const scoreSunAlt = darknessSunAltitude(dateUtc.getTime(),dateEndUtc.getTime());
+    const darkQ = darknessQuality(scoreSunAlt);
     const moonQ = 100 - moonPenalty(sm.moonAlt, sm.moonIllum);
     const seeingQ = Number.isFinite(mbSeeing) ? scaleQuality(mbSeeing, 0.55, 2.8) : (Number.isFinite(seeingQualityFromIndex(seeingIndex)) ? seeingQualityFromIndex(seeingIndex) : atm.quality);
 
@@ -545,7 +626,7 @@ function buildRows() {
     const usabilityGate = skyGate === 0 || precipGate === 0 ? 0 : skyGate * precipGate;
     let deep = usabilityGate === 0 ? 0 : deepBase * usabilityGate;
     let planetary = usabilityGate === 0 ? 0 : planetaryBase * usabilityGate;
-    if (sm.sunAlt > -6) { deep *= darkQ/100; }
+    if (scoreSunAlt > -6) { deep *= darkQ/100; }
 
     result.push({
       localTime,dateUtc,dateEndUtc,sunAlt:sm.sunAlt,moonAlt:sm.moonAlt,moonIllum:sm.moonIllum,
@@ -572,18 +653,9 @@ function visibleRows() {
   const base = horizonRows();
   if (!base.length) return [];
 
-  // Nur Nachtplanung anzeigen. Die Stunde direkt vor dem ersten
-  // Sonnenstand unter 0° und direkt nach dem letzten wird mitgenommen,
-  // damit Sonnenuntergang bzw. Sonnenaufgang im Stundenraster sichtbar bleiben.
-  const keep = new Set();
-  base.forEach((r, i) => {
-    if (Number.isFinite(r.sunAlt) && r.sunAlt <= 0) {
-      keep.add(i);
-      if (i > 0) keep.add(i - 1);
-      if (i < base.length - 1) keep.add(i + 1);
-    }
-  });
-  return base.filter((_, i) => keep.has(i));
+  // Include any hour with a nonzero overlap after civil dusk or before civil dawn.
+  // Never shift or truncate the underlying hourly weather forecast.
+  return base.filter(r=>nighttimeSegments(r).some(s=>s.key==='dark'||s.key==='astro'||s.key==='nautical'));
 }
 function renderAll() { $('#summary').hidden=false; $('#forecastCard').hidden=false; $('#details').hidden=false; renderSummary(); renderTable(); }
 function renderLocation() {
@@ -671,8 +743,15 @@ function nightLabel(rows) {
 
 function renderNightTable(rows, nightIndex) {
   const group = name => `${name}-${nightIndex}`;
-  const head=rows.map(r=>`<th class="date-cell ${nightClass(r)}" title="${escapeHtml(hourIntervalLabel(r))}"><div>${formatLocal(r.dateUtc,{weekday:'short'})} ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})}</div><strong>${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}</strong></th>`);
+  const head=rows.map(r=>{
+    const usable=nighttimeSegments(r).filter(s=>s.key==='dark'||s.key==='astro'||s.key==='nautical');
+    const minutes=usable.reduce((sum,s)=>sum+(s.end-s.start)/60000,0);
+    const partial=minutes<59.99;
+    const interval=partial?`${hourIntervalLabel(r)} · ${Math.round(minutes)} Minuten nach ziviler Dämmerung`:hourIntervalLabel(r);
+    return `<th class="date-cell ${nightClass(r)}" title="${escapeHtml(interval)}"><div>${formatLocal(r.dateUtc,{weekday:'short'})} ${formatLocal(r.dateUtc,{day:'2-digit',month:'2-digit'})}</div><strong>${formatLocal(r.dateUtc,{hour:'2-digit',minute:'2-digit'})}</strong>${partial?'<small class="partial-hour">Teilweise</small>':''}</th>`;
+  });
   const html=[]; html.push(`<thead><tr><th class="row-label">Zeit</th>${head.join('')}</tr></thead><tbody>`);
+  html.push(row('Dunkelheit',rows.map(twilightBarCell),'Sonnenhöhe: Zivil 0 bis −6°, Nautisch −6 bis −12°, Astronomisch −12 bis −18°, dunkel unter −18°. Farbwechsel sind minutengenau; Wetterwerte bleiben stündlich.'));
   // Kompakte Standardansicht.
   html.push(row('Deep Sky',rows.map(r=>cellByQuality(fmt(r.deep),r.deep,'score',Number.isFinite(r.deep)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
   html.push(row('Planetary',rows.map(r=>cellByQuality(fmt(r.planetary),r.planetary,'score',Number.isFinite(r.planetary)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
@@ -747,7 +826,10 @@ function renderNightTable(rows, nightIndex) {
 
 
   html.push('</tbody>');
-  return `<section class="night-block"><h3 class="night-title">${nightLabel(rows)}</h3><div class="night-table-wrap"><table class="forecast-table" aria-label="Astro Forecast ${escapeHtml(nightLabel(rows))}">${html.join('')}</table></div></section>`;
+  const legend='<div class="twilight-legend" aria-label="Dämmerungsphasen">' + [
+    ['#d7a45b','Tag'],['#b88a5d','Zivil'],['#6489a9','Nautisch'],['#37558a','Astronomisch'],['#101a35','Dunkel']
+  ].map(([color,label])=>`<span><i style="background:${color}"></i>${label}</span>`).join('')+'</div>';
+  return `<section class="night-block"><h3 class="night-title">${nightLabel(rows)}</h3>${legend}<div class="night-table-wrap"><table class="forecast-table" aria-label="Astro Forecast ${escapeHtml(nightLabel(rows))}">${html.join('')}</table></div></section>`;
 }
 
 function renderTable() {

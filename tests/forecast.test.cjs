@@ -131,12 +131,33 @@ test('horizon starts at the current hour and respects selected length', () => {
   app.state.rows = [11, 12, 13, 14].map(hour => ({ dateUtc: new Date(`2026-10-12T${hour}:00:00Z`) }));
   assert.deepEqual(Array.from(app.horizonRows(), row => row.dateUtc.getUTCHours()), [12, 13]);
 });
-test('night filter includes adjacent sunrise and sunset hours only', () => {
-  const app = loadApp({ now: '2026-10-12T00:00:00Z' });
-  app.state.rows = [10, 5, -1, -10, -1, 5, 10].map((sunAlt, hour) => ({
-    sunAlt, dateUtc: new Date(Date.UTC(2026, 9, 12, hour))
+test('night filter uses any overlap below civil dusk, including partial boundary hours', () => {
+  const app = loadApp({ now: '2026-10-12T00:00:00Z', sunAltitudeAt: date => {
+    const hour = (date.getTime() - Date.parse('2026-10-12T00:00:00Z')) / 3600000;
+    return hour < 1.6 ? 5 : hour < 4.35 ? -10 : 5;
+  } });
+  app.state.rows = Array.from({length:7}, (_, hour) => ({
+    dateUtc: new Date(Date.UTC(2026, 9, 12, hour))
   }));
-  assert.deepEqual(Array.from(app.visibleRows(), row => row.dateUtc.getUTCHours()), [1, 2, 3, 4, 5]);
+  assert.deepEqual(Array.from(app.visibleRows(), row => row.dateUtc.getUTCHours()), [1, 2, 3, 4]);
+});
+test('twilight bar includes all stages and exact transition within an hour', () => {
+  const app = loadApp({ sunAltitudeAt: date => -3 - 20 * (date.getTime() - Date.parse('2026-10-12T18:00:00Z')) / 3600000 });
+  const start = Date.parse('2026-10-12T18:00:00Z');
+  const segments = app.twilightIntervals(start,start+3600000);
+  assert.deepEqual(Array.from(segments,s=>s.key), ['civil','nautical','astro','dark']);
+  assert.ok(Math.abs(segments[1].start - (start + 9*60000)) < 1000);
+  const html = app.twilightBarCell({dateUtc:new Date(start)});
+  assert.match(html, /linear-gradient/);
+  assert.match(html, /Nautische Dämmerung/);
+});
+test('repeated local 02:00 hours remain separate during winter clock change', () => {
+  const app = loadApp({ now: '2026-10-24T00:00:00Z' });
+  app.state.rows = ['2026-10-25T00:00:00Z','2026-10-25T01:00:00Z'].map(iso=>({
+    dateUtc:new Date(iso), localTime:'2026-10-25T02:00'
+  }));
+  assert.equal(app.visibleRows().length,2);
+  assert.equal(app.groupNights(app.visibleRows())[0].rows.length,2);
 });
 test('post-midnight hours belong to the preceding night', () => {
   const app = loadApp();
