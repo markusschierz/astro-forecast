@@ -689,6 +689,15 @@ function renderSummary() {
 }
 function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function td(value,cls='',title=''){return `<td class="${cls}"${title?` title="${escapeHtml(title)}"`:''}>${value}</td>`;}
+function sourceLabel(source) {
+  if (!source) return '—';
+  return escapeHtml(source).replace(/MeteoSwiss/g,'Meteo-<wbr>Swiss').replace(/Best Match/g,'Best<br class="source-break">Match');
+}
+function sourceCell(sources) {
+  const names=sources.filter(Boolean);
+  if (!names.length) return td('—');
+  return td(names.map(sourceLabel).join('<br>'),'source-cell');
+}
 function row(label,cells,title=''){return `<tr><th class="row-label" scope="row"${title?` title="${escapeHtml(title)}"`:''}>${label}</th>${cells.join('')}</tr>`;}
 function fmt(v,d=0,s=''){return Number.isFinite(v)?`${v.toFixed(d)}${s}`:'—';}
 function signedDeg(v){if(!Number.isFinite(v))return '—';const n=Math.round(v);return `${n>=0?'+':''}${n}°`;}
@@ -757,18 +766,16 @@ function renderNightTable(rows, nightIndex) {
   html.push(row('Planetary',rows.map(r=>cellByQuality(fmt(r.planetary),r.planetary,'score',Number.isFinite(r.planetary)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
   html.push(row('Mond',rows.map(r=>{
     const text = `${fmt(r.moonIllum*100,0,'%')} · ${signedDeg(r.moonAlt)}`;
-    return cellByQuality(text,100-moonPenalty(r.moonAlt,r.moonIllum),'','Beleuchtung · Mondhöhe. Die Farbe bewertet den Einfluss des Mondlichts.');
+    return cellByQuality(text,100-moonPenalty(r.moonAlt,r.moonIllum),'moon-cell','Beleuchtung · Mondhöhe. Die Farbe bewertet den Einfluss des Mondlichts.');
   }),'Mondbeleuchtung und Mondhöhe. Unter dem Horizont verursacht der Mond keinen Lichtabzug im Deep-Sky-Score.'));
   html.push(row('Tau-Risiko',rows.map(r=>{
-    const spread = Number.isFinite(r.temp) && Number.isFinite(r.dew) ? r.temp-r.dew : NaN;
-    const text = Number.isFinite(spread) ? `${dewRiskLabel(r.dewQ)} · ${spread.toFixed(1)} K` : dewRiskLabel(r.dewQ);
-    return cellByQuality(text,r.dewQ,'','Betriebsinfo aus Temperatur–Taupunkt-Abstand und relativer Feuchte. Mit Taukappe/Heizung normalerweise kein Qualitätskiller.');
+    return cellByQuality(dewRiskLabel(r.dewQ),r.dewQ,'','Betriebsinfo aus Temperatur–Taupunkt-Abstand und relativer Feuchte. Mit Taukappe/Heizung normalerweise kein Qualitätskiller.');
   }),'Betriebsinfo für Kondensationsgefahr an Optik und Ausrüstung. Tau beeinflusst den Deep-Sky-Score nicht mehr direkt.'));
 
   html.push(detailGroup('Wolken & Transparenz',group('clouds'),rows,'Quellenvergleich und Schichten'));
   html.push(detailRow(group('clouds'),'Wolken-Konsens',rows.map(r=>cellByBadPercent(r.cloudConsensus)), 'Konservativer Konsens aus MeteoSwiss bzw. Best Match und meteoblue mLM; bei nur einer verfügbaren Quelle wird diese verwendet.'));
   html.push(detailRow(group('clouds'),'Wettermodell gesamt',rows.map(r=>cellByBadPercent(r.weatherCloud))));
-  html.push(detailRow(group('clouds'),'Wettermodell Quelle',rows.map(r=>td(r.weatherSources.cloud_cover || '—'))));
+  html.push(detailRow(group('clouds'),'Wettermodell Quelle',rows.map(r=>sourceCell([r.weatherSources.cloud_cover]))));
   html.push(detailRow(group('clouds'),'MeteoSwiss gesamt',rows.map(r=>cellByBadPercent(r.cloud))));
   html.push(detailRow(group('clouds'),'meteoblue gesamt',rows.map(r=>Number.isFinite(r.mbCloud)?cellByBadPercent(r.mbCloud):td('—'))));
   html.push(detailRow(group('clouds'),'MeteoSwiss tief',rows.map(r=>cellByBadPercent(r.low))));
@@ -807,15 +814,15 @@ function renderNightTable(rows, nightIndex) {
   })));
 
   html.push(detailGroup('Wetter & Tau',group('weather'),rows,'Wind, Feuchte und Niederschlag'));
-  html.push(detailRow(group('weather'),'Windquelle',rows.map(r=>td(r.weatherSources.wind_speed_10m || '—'))));
+  html.push(detailRow(group('weather'),'Windquelle',rows.map(r=>sourceCell([r.weatherSources.wind_speed_10m]))));
   html.push(detailRow(group('weather'),'Wind',rows.map(r=>cellByQuality(fmt(r.wind,0,' km/h'),scaleQuality(r.wind,3,28)))));
   html.push(detailRow(group('weather'),'Böen',rows.map(r=>cellByQuality(fmt(r.gust,0,' km/h'),scaleQuality(r.gust,8,45)))));
   html.push(detailRow(group('weather'),'Temperatur',rows.map(r=>td(fmt(r.temp,1,'°')))));
   html.push(detailRow(group('weather'),'Taupunkt',rows.map(r=>td(fmt(r.dew,1,'°')))));
   html.push(detailRow(group('weather'),'ΔT Tau',rows.map(r=>cellByQuality(fmt(r.temp-r.dew,1,' K'),r.dewQ))));
   html.push(detailRow(group('weather'),'Feuchte',rows.map(r=>cellByQuality(fmt(r.rh,0,'%'),scaleQuality(r.rh,55,98)))));
-  html.push(detailRow(group('weather'),'Niederschlag',rows.map(r=>cellByQuality(`${fmt(r.precip,2,' mm')} / ${fmt(r.pop,0,'%')}`,100 * precipitationGate(r.precip, r.pop)))));
-  html.push(detailRow(group('weather'),'Niederschlagsquelle',rows.map(r=>td([r.weatherSources.precipitation,r.weatherSources.precipitation_probability].filter(Boolean).join(' / ') || '—')), 'Menge / Wahrscheinlichkeit; aus der jeweiligen Wetterquelle.'));
+  html.push(detailRow(group('weather'),'Niederschlag',rows.map(r=>cellByQuality(`${fmt(r.precip,2,' mm')}<br>${fmt(r.pop,0,'%')}`,100 * precipitationGate(r.precip, r.pop)))));
+  html.push(detailRow(group('weather'),'Niederschlagsquelle',rows.map(r=>sourceCell([r.weatherSources.precipitation,r.weatherSources.precipitation_probability])), 'Menge / Wahrscheinlichkeit; aus der jeweiligen Wetterquelle.'));
   html.push(detailRow(group('weather'),'Wolkenbasis',rows.map(r=>td(Number.isFinite(r.cloudBase)?`${Math.round(r.cloudBase)} m`:'—'))));
   html.push(detailRow(group('weather'),'CAPE meteoblue',rows.map(r=>Number.isFinite(r.mbCape)?cellByQuality(fmt(r.mbCape,0,' J/kg'),scaleQuality(r.mbCape,20,800)):td('—')), 'Konvektive verfügbare potentielle Energie aus meteoblue Air.'));
 
@@ -829,7 +836,7 @@ function renderNightTable(rows, nightIndex) {
   const legend='<div class="twilight-legend" aria-label="Dämmerungsphasen">' + [
     ['#d7a45b','Tag'],['#b88a5d','Zivil'],['#6489a9','Nautisch'],['#37558a','Astronomisch'],['#101a35','Dunkel']
   ].map(([color,label])=>`<span><i style="background:${color}"></i>${label}</span>`).join('')+'</div>';
-  return `<section class="night-block"><h3 class="night-title">${nightLabel(rows)}</h3>${legend}<div class="night-table-wrap"><table class="forecast-table" aria-label="Astro Forecast ${escapeHtml(nightLabel(rows))}">${html.join('')}</table></div></section>`;
+  return `<section class="night-block"><h3 class="night-title">${nightLabel(rows)}</h3>${legend}<div class="night-table-wrap"><table class="forecast-table" style="--hour-count:${rows.length}" aria-label="Astro Forecast ${escapeHtml(nightLabel(rows))}">${html.join('')}</table></div></section>`;
 }
 
 function renderTable() {

@@ -178,7 +178,23 @@ test('night table shows illumination, signed moon altitude and dew beneath moon'
   const { app, row } = forecast({}, { moonAlt: -10, illumination: 0.5 });
   const html = app.renderNightTable([row], 0);
   assert.match(html, /50% · -10°/);
+  assert.match(html, /moon-cell/);
   assert.ok(html.indexOf('Tau-Risiko') > html.indexOf('Mond'));
+  const dewRow=html.match(/<tr><th[^>]*>Tau-Risiko<\/th>(.*?)<\/tr>/)?.[1];
+  assert.ok(dewRow);
+  assert.doesNotMatch(dewRow,/\d+\.\d+ K/);
+});
+test('compact forecast table wraps source names and precipitation but not moon content', () => {
+  const {app,row}=forecast();
+  row.weatherSources.cloud_cover='MeteoSwiss';
+  row.weatherSources.wind_speed_10m='MeteoSwiss';
+  row.weatherSources.precipitation='MeteoSwiss';
+  row.weatherSources.precipitation_probability='Best Match';
+  const html=app.renderNightTable([row],0);
+  assert.match(html,/Meteo-<wbr>Swiss/);
+  assert.match(html,/Best<br class="source-break">Match/);
+  assert.match(html,/0\.00 mm<br>0%/);
+  assert.match(html,/moon-cell/);
 });
 test('missing cloud values suppress scores instead of implying clear sky', () => {
   for (const value of [null, undefined, '', ' ', false, -9999, NaN]) {
@@ -316,7 +332,7 @@ test('rain and displayed amount belong to the starting hour, not the preceding h
   assert.equal(rows[1].precip, 0);
   assert.equal(rows[1].cloud, 30); assert.equal(rows[1].temp, 11);
   assert.equal(rows[1].deep, 70); assert.equal(rows[1].planetary, 70);
-  assert.match(app.renderNightTable([rows[0]], 0), /class="c-bad"[^>]*>0\.05 mm \/ 0%/);
+  assert.match(app.renderNightTable([rows[0]], 0), /class="c-bad"[^>]*>0\.05 mm<br>0%/);
   assert.match(app.renderNightTable([rows[0]], 0), /title="21:00–21:59"/);
 });
 test('precipitation probability gates the same window shown in the table', () => {
@@ -326,7 +342,7 @@ test('precipitation probability gates the same window shown in the table', () =>
   const row = app.buildRows()[0];
   assert.equal(row.pop, 50);
   assert.equal(row.deep, 25); assert.equal(row.planetary, 25);
-  assert.match(app.renderNightTable([row], 0), /0\.00 mm \/ 50%/);
+  assert.match(app.renderNightTable([row], 0), /0\.00 mm<br>50%/);
 });
 test('gust maximum affects display and scores in its own window', () => {
   const app = windowApp(['2026-10-12T22:00Z','2026-10-12T23:00Z'], {
