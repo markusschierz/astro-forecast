@@ -11,7 +11,7 @@ Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden
 
 ## Aktueller Stand
 
-Die sichtbare App-Version ist **3.12**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
+Die sichtbare App-Version ist **3.13**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
 
 - Standortsuche mit Winterthur als Standard, optional GPS; gespeicherter Standort im Browser bzw. in der Android-WebView.
 - Stündliches Raster mit Prognosezeiträumen von 3, 5 und 8 Tagen. Die Quellen können kürzere Horizonte liefern; 8 Tage bedeuten derzeit nicht garantiert 192 kommende Stunden.
@@ -25,7 +25,7 @@ Die sichtbare App-Version ist **3.12**. Deployment- und Dokumentationsänderunge
 | Quelle | Verwendung |
 | --- | --- |
 | MeteoSwiss ICON-CH via Open-Meteo | Wetter, Bewölkung, Wind, Feuchte, Taupunkt, Niederschlag |
-| Open-Meteo Best Match | Wetter-Fallback, falls der explizite MeteoSwiss-Abruf scheitert |
+| Open-Meteo Best Match | Stündlicher Feld-Fallback für fehlende MeteoSwiss-Werte, auch wenn die MeteoSwiss-Antwort erfolgreich war |
 | Open-Meteo Druckniveau-Daten | Atmosphärenindikator aus 850/700/500/300/250/200 hPa |
 | meteoblue Clouds/Air | Unabhängiger Wolken-/Atmosphärenvergleich |
 | meteoblue seeing-1h | Direkte Seeing-Prognose, falls für den serverseitigen Key freigeschaltet |
@@ -49,7 +49,7 @@ Wetter und Höhenprofile werden mit absoluten UTC-Unix-Zeitstempeln abgerufen. D
 - Wolken und optionaler Nebel wirken als gemeinsames Sichtbarkeits-Gate; der schlechtere Wert wird verwendet.
 - Wolken-Konsens bei zwei Quellen: 65 % des höheren und 35 % des niedrigeren Wertes; bei einer Quelle gilt deren Wert. 100 % versus 0 % ergeben somit 65 % Konsens, nicht vollständige Blockierung.
 - Niederschlagswahrscheinlichkeit wirkt quadratisch; modellierte Niederschlagsmenge ab 0,05 mm/h setzt beide Scores auf 0.
-- Fehlende Gesamtbewölkung aus beiden Quellen oder fehlende Niederschlagsmenge/-wahrscheinlichkeit ergeben unbekannte Scores, dargestellt als neutraler Strich. Ein bekannter Showstopper bleibt bei 0.
+- Fehlende Gesamtbewölkung aus allen Quellen oder fehlende Niederschlagsmenge/-wahrscheinlichkeit auch nach dem Best-Match-Fallback ergeben unbekannte Scores, dargestellt als neutraler Strich. Ein bekannter Showstopper bleibt bei 0.
 - Ohne Seeing-Quelle einschließlich Atmosphärenindikator bleibt Planetary unbekannt. Unbekannte Scores werden nicht als beste Stunde ausgewählt.
 - Tau beeinflusst den Score nicht direkt; der Transparenz-Fallback nutzt Luftfeuchte und verfügbare Sichtweite, ohne Bewölkung erneut einzurechnen.
 - Gefordert sind Mondbeleuchtung und Horizonthöhe. Ein Ziel–Mond-Abstand gehört nicht zum Funktionsumfang.

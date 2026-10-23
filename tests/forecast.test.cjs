@@ -11,6 +11,54 @@ function forecast(overrides = {}, options = {}, mb = null, astro = timer()) {
   return { app, row: app.buildRows()[0] };
 }
 
+test('Best Match fills missing ICON values per UTC hour and field', () => {
+  const app = loadApp();
+  const primary = weather({ cloud_cover: null, precipitation: null });
+  const alternative = weather({ cloud_cover: 60, precipitation: 0.01, wind_speed_10m: 25 });
+  const merged = app.mergeWeather(primary, alternative);
+  assert.equal(merged.hourly.cloud_cover[0], 60);
+  assert.equal(merged.hourly.precipitation[1], 0.01);
+  assert.equal(merged.hourly.wind_speed_10m[0], 0);
+  assert.equal(merged.sources.cloud_cover[0], 'Best Match');
+  assert.equal(merged.sources.wind_speed_10m[0], 'MeteoSwiss');
+  app.state.weatherPrimary = primary;
+  app.state.weather = merged;
+  app.state.astro = timer();
+  const row = app.buildRows()[0];
+  assert.ok(Number.isFinite(row.deep));
+  assert.ok(Number.isFinite(row.planetary));
+  assert.ok(Number.isNaN(row.cloud));
+  assert.equal(row.cloudConsensus, 60);
+  assert.equal(row.weatherSources.precipitation, 'Best Match');
+});
+
+test('Best Match aligns different time ranges and does not reuse preceding rain', () => {
+  const app = loadApp();
+  const primary = weather();
+  primary.hourly.precipitation = [0, null];
+  const alternative = weather({ precipitation: 0.1 });
+  alternative.hourly.time = ['2026-10-12T23:00','2026-10-13T00:00'];
+  const merged = app.mergeWeather(primary, alternative);
+  assert.equal(merged.hourly.precipitation[0], 0);
+  assert.equal(merged.hourly.precipitation[1], 0.1);
+  assert.equal(merged.sources.precipitation[1], 'Best Match');
+  app.state.weather = merged;
+  app.state.astro = timer();
+  const row = app.buildRows()[0];
+  assert.equal(row.precip, 0.1);
+  assert.equal(row.deep, 0);
+  assert.equal(row.planetary, 0);
+});
+
+test('missing precipitation in both models remains unknown', () => {
+  const app = loadApp();
+  const primary = weather({ precipitation: null });
+  const alternate = weather({ precipitation: null });
+  app.state.weather = app.mergeWeather(primary, alternate);
+  app.state.astro = timer();
+  assert.ok(Number.isNaN(app.buildRows()[0].deep));
+});
+
 test('clear dark sky with direct seeing and transparency is excellent', () => {
   const { row } = forecast();
   assert.equal(row.deep, 100);
