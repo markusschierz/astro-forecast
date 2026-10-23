@@ -11,11 +11,12 @@ Die Webapp kann eigenständig geöffnet oder per iframe in WordPress eingebunden
 
 ## Aktueller Stand
 
-Die sichtbare App-Version ist **3.14**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
+Die sichtbare App-Version ist **3.14.1**. Deployment- und Dokumentationsänderungen erhalten eigene Git-Commits, ohne die App-Version zu erhöhen. Änderungen an Anzeige oder Berechnung erhalten eine neue App-Versionsnummer und einen passenden Service-Worker-Cache-Namen.
 
 - Standortsuche mit Winterthur als Standard, optional GPS; gespeicherter Standort im Browser bzw. in der Android-WebView.
 - Stündliches Raster mit Prognosezeiträumen von 3, 5 und 8 Tagen. Die Quellen können kürzere Horizonte liefern; 8 Tage bedeuten derzeit nicht garantiert 192 kommende Stunden.
 - Nächte untereinander, dynamisch auf Stunden mit einem Anteil unter −6° Sonnenhöhe begrenzt; minutengenauer Dämmerungsbalken und Kennzeichnung teilweise nutzbarer Randstunden. Details gruppenweise aufklappbar.
+- Kompakte Stunden-Spalten mit zweizeiligen Quellen- und Niederschlagswerten; Mondbeleuchtung und Mondhöhe bleiben zusammen auf einer Zeile, Tau-Risiko wird nur als Text gezeigt.
 - Getrennte Deep-Sky- und Planetary-Scores, Mondbeleuchtung und vorzeichenbehaftete Mondhöhe.
 - Tau-Risiko als Betriebsinformation unter Mond, ohne direkten Einfluss auf den Score.
 - Mehrere Wetterquellen mit Ersatzquellen und serverseitigem API-Key.
