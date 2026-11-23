@@ -198,6 +198,31 @@ test('compact forecast table wraps sources and precipitation and keeps the moon 
   assert.match(html,/0\.00 mm<br>0%/);
   assert.match(html,/moon-cell[^>]*>50%</);
 });
+test('both moon rows color the displayed illumination independently of altitude', () => {
+  const { app, row } = forecast();
+  const cases = [
+    [1, -10, '100%', 'c-bad'],
+    [0.998, 75, '100%', 'c-bad'],
+    [0.88, -5, '88%', 'c-bad'],
+    [0.85, 65, '85%', 'c-bad'],
+    [0.704, -10, '70%', 'c-poor'],
+    [0.696, 75, '70%', 'c-poor'],
+    [0.694, 75, '69%', 'c-poor'],
+    [0.71, -10, '71%', 'c-bad'],
+    [0, 75, '0%', 'c-excellent'],
+    [NaN, -10, '—', '']
+  ];
+  const rows = cases.map(([moonIllum, moonAlt]) => ({ ...row, moonIllum, moonAlt }));
+  const html = app.renderNightTable(rows, 0);
+  const expected = cases.map(([, , percentage, color]) => [percentage, color]);
+
+  for (const label of ['Mond', 'Mondlicht']) {
+    const cells = html.match(new RegExp(`>${label}<\\/th>(.*?)<\\/tr>`))[1];
+    const actual = [...cells.matchAll(/<td class="([^"]*)"[^>]*>([^<]+)<\/td>/g)]
+      .map(([, classes, percentage]) => [percentage, classes.replace('moon-cell', '').trim()]);
+    assert.deepEqual(actual, expected);
+  }
+});
 test('missing cloud values suppress scores instead of implying clear sky', () => {
   for (const value of [null, undefined, '', ' ', false, -9999, NaN]) {
     const { row } = forecast({ cloud_cover: value });
