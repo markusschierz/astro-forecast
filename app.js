@@ -710,6 +710,10 @@ function dewRiskLabel(q) {
 }
 function cellByQuality(text,q,extra='',title=''){return td(text,`${Number.isFinite(q)?scoreClass(q):''} ${extra}`.trim(),title);}
 function cellByBadPercent(v,text=null){return cellByQuality(text??fmt(v,0,'%'),percentQuality(v));}
+function moonIlluminationCell(r, extra='') {
+  const percent = Math.round(r.moonIllum * 100);
+  return cellByQuality(fmt(percent, 0, '%'), percentQuality(percent), extra);
+}
 function nightClass(r){if(r.sunAlt<=-18)return'astronomical';if(r.sunAlt<=-6)return'night';return'daylight';}
 
 function detailRow(group, label, cells, title='') {
@@ -764,9 +768,7 @@ function renderNightTable(rows, nightIndex) {
   // Kompakte Standardansicht.
   html.push(row('Deep Sky',rows.map(r=>cellByQuality(fmt(r.deep),r.deep,'score',Number.isFinite(r.deep)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
   html.push(row('Planetary',rows.map(r=>cellByQuality(fmt(r.planetary),r.planetary,'score',Number.isFinite(r.planetary)?'':'Nicht bewertbar: entscheidende Prognosedaten fehlen.'))));
-  html.push(row('Mond',rows.map(r=>{
-    return cellByQuality(fmt(r.moonIllum*100,0,'%'),100-moonPenalty(r.moonAlt,r.moonIllum),'moon-cell','Mondbeleuchtung. Die Farbe berücksichtigt auch die Mondhöhe; diese steht unter Dämmerung & Mond.');
-  }),'Mondbeleuchtung. Die Mondhöhe steht unter Dämmerung & Mond. Unter dem Horizont verursacht der Mond keinen Lichtabzug im Deep-Sky-Score.'));
+  html.push(row('Mond',rows.map(r=>moonIlluminationCell(r,'moon-cell')),'Die Farbe zeigt den beleuchteten Anteil der Mondscheibe. Die Mondhöhe steht unter Dämmerung & Mond. Unter dem Horizont verursacht der Mond keinen Lichtabzug im Deep-Sky-Score.'));
   html.push(row('Tau-Risiko',rows.map(r=>{
     return cellByQuality(dewRiskLabel(r.dewQ),r.dewQ,'','Betriebsinfo aus Temperatur–Taupunkt-Abstand und relativer Feuchte. Mit Taukappe/Heizung normalerweise kein Qualitätskiller.');
   }),'Betriebsinfo für Kondensationsgefahr an Optik und Ausrüstung. Tau beeinflusst den Deep-Sky-Score nicht mehr direkt.'));
@@ -828,7 +830,7 @@ function renderNightTable(rows, nightIndex) {
   html.push(detailGroup('Dämmerung & Mond',group('astro'),rows,'Sonnen- und Mondhöhe'));
   html.push(detailRow(group('astro'),'Sonnenhöhe',rows.map(r=>cellByQuality(fmt(r.sunAlt,0,'°'),darknessQuality(r.sunAlt)))));
   html.push(detailRow(group('astro'),'Mondhöhe',rows.map(r=>td(fmt(r.moonAlt,0,'°')))));
-  html.push(detailRow(group('astro'),'Mondlicht',rows.map(r=>cellByQuality(fmt(r.moonIllum*100,0,'%'),100-moonPenalty(r.moonAlt,r.moonIllum)))));
+  html.push(detailRow(group('astro'),'Mondlicht',rows.map(r=>moonIlluminationCell(r))));
 
 
   html.push('</tbody>');
